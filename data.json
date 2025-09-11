@@ -1,0 +1,506 @@
+[
+    {
+        "id": 10001001,
+        "name": {
+            "first_name": "John",
+            "middle_initial": "A",
+            "last_name": "Doe",
+            "VOID": "JD1001"
+        },
+        "email": "john.doe@example.com",
+        "created_at": "2025-09-07T12:00:00Z",
+        "authentication": {
+            "method": "OAuth2",
+            "token": "abc123xyz456"
+        },
+        "roles": {
+            "BreakGlass": false,
+            "AdminUser": true,
+            "User": true,
+            "Reports_RO": false
+        },
+        "machine_info": {
+            "machine_id": "MCH1001",
+            "os": "Windows 10",
+            "ip_address": "192.168.1.100",
+            "last_login": "2025-09-07T11:50:00Z",
+            "installed_software": [
+                "Panther",
+                "Kamikaze",
+                "Starfire"
+            ]
+        },
+        "request_info": {
+            "request_id": "REQ123456",
+            "requested_at": "2025-09-07T11:55:00Z",
+            "hostname": "host1.example.com",
+            "shell_script": "deploy.sh",
+            "script_parameters": [
+                "--force",
+                "--verbose"
+            ]
+        }
+    },
+    {
+        "id": 10001002,
+        "name": {
+            "first_name": "Jane",
+            "middle_initial": null,
+            "last_name": "Smith",
+            "VOID": "JD1002"
+        },
+        "email": "jane.smith@example.com",
+        "created_at": "2025-09-07T12:05:00Z",
+        "authentication": {
+            "method": "OAuth2",
+            "token": "def456uvw789"
+        },
+        "roles": {
+            "BreakGlass": true,
+            "AdminUser": true,
+            "User": true,
+            "Reports_RO": true
+        },
+        "machine_info": {
+            "machine_id": "MCH1002",
+            "os": "macOS Monterey",
+            "ip_address": "192.168.1.101",
+            "last_login": "2025-09-07T11:55:00Z",
+            "installed_software": [
+                "Lion",
+                "Zephyr",
+                "Starfire"
+            ]
+        },
+        "request_info": {
+            "request_id": "REQ654321",
+            "requested_at": "2025-09-07T12:00:00Z",
+            "hostname": "host2.example.com",
+            "shell_script": "backup.sh",
+            "script_parameters": [
+                "--incremental",
+                "--compress"
+            ]
+        }
+    },
+    {
+        "id": 10001003,
+        "name": {
+            "first_name": "Terry",
+            "middle_initial": "L",
+            "last_name": "Lewis",
+            "VOID": "JL1003"
+        },
+        "email": "terry.lewis@example.com",
+        "created_at": "2025-09-07T12:10:00Z",
+        "authentication": {
+            "method": "OAuth2",
+            "token": "ghi789rst012"
+        },
+        "roles": {
+            "BreakGlass": true,
+            "AdminUser": true,
+            "User": true,
+            "Reports_RO": false
+        },
+        "machine_info": {
+            "machine_id": "MCH1003",
+            "os": "Ubuntu 22.04",
+            "ip_address": "192.168.1.100",
+            "last_login": "2025-09-07T12:00:00Z",
+            "installed_software": [
+                "Panther",
+                "Kamikaze",
+                "Zephyr"
+            ]
+        },
+        "request_info": {
+            "request_id": "REQ789012",
+            "requested_at": "2025-09-07T12:05:00Z",
+            "hostname": "host3.example.com",
+            "shell_script": "update.sh",
+            "script_parameters": [
+                "--all",
+                "--dry-run"
+            ]
+        }
+    },
+    {
+        "id": 10001004,
+        "name": {
+            "first_name": "Alphonso",
+            "middle_initial": "S",
+            "last_name": "Garcia",
+            "VOID": "AG1004"
+        },
+        "email": "alphonso.garcia@example.com",
+        "created_at": "2025-09-07T12:15:00Z",
+        "authentication": {
+            "method": "OAuth2",
+            "token": "jkl012mno345"
+        },
+        "roles": {
+            "BreakGlass": false,
+            "AdminUser": true,
+            "User": true,
+            "Reports_RO": false
+        },
+        "machine_info": {
+            "machine_id": "MCH1004",
+            "os": "Windows 11",
+            "ip_address": "192.168.1.100",
+            "last_login": "2025-09-07T12:10:00Z",
+            "installed_software": [
+                "Jaguar",
+                "Zephyr",
+                "Lilypad"
+            ]
+        },
+        "request_info": {
+            "request_id": "REQ345678",
+            "requested_at": "2025-09-07T12:10:00Z",
+            "hostname": "host4.example.com",
+            "shell_script": "cleanup.sh",
+            "script_parameters": [
+                "--all",
+                "--force"
+            ]
+        }
+    },
+    {
+        "id": 10001005,
+        "name": {
+            "first_name": "Maria",
+            "middle_initial": "P",
+            "last_name": "Lopez",
+            "VOID": "ML1005"
+        },
+        "email": "maria.lopez@example.com",
+        "created_at": "2025-09-07T12:20:00Z",
+        "authentication": {
+            "method": "OAuth2",
+            "token": "mno345pqr678"
+        },
+        "roles": {
+            "BreakGlass": false,
+            "AdminUser": false,
+            "User": true,
+            "Reports_RO": false
+        },
+        "machine_info": {
+            "machine_id": "MCH1005",
+            "os": "Fedora 36",
+            "ip_address": "192.168.1.102",
+            "last_login": "2025-09-07T12:20:00Z",
+            "installed_software": [
+                "Jaguar",
+                "Zephyr",
+                "Lilypad"
+            ]
+        },
+        "request_info": {
+            "request_id": "REQ901234",
+            "requested_at": "2025-09-07T12:15:00Z",
+            "hostname": "host5.example.com",
+            "shell_script": "monitor.sh",
+            "script_parameters": [
+                "--interval=5",
+                "--log"
+            ]
+        }
+    },
+    {
+        "id": 10001006,
+        "name": {
+            "first_name": "Mamadou",
+            "middle_initial": null,
+            "last_name": "Diaby",
+            "VOID": "MD1006"
+        },
+        "email": "mamadou.diaby@example.com",
+        "created_at": "2025-09-07T12:25:00Z",
+        "authentication": {
+            "method": "OAuth2",
+            "token": "pqr678stu901"
+        },
+        "roles": {
+            "BreakGlass": false,
+            "AdminUser": false,
+            "User": true,
+            "Reports_RO": false
+        },
+        "machine_info": {
+            "machine_id": "MCH1006",
+            "os": "Windows 10",
+            "ip_address": "192.168.1.103",
+            "last_login": "2025-09-07T12:25:00Z",
+            "installed_software": [
+                "Tiger",
+                "Tsunami",
+                "Cheyenne"
+            ]
+        },
+        "request_info": {
+            "request_id": "REQ567890",
+            "requested_at": "2025-09-07T12:20:00Z",
+            "hostname": "host6.example.com",
+            "shell_script": "scan.sh",
+            "script_parameters": [
+                "--quick",
+                "--report"
+            ]
+        }
+    },
+    {
+        "id": 10001007,
+        "name": {
+            "first_name": "Anthony",
+            "middle_initial": "D",
+            "last_name": "Arnold",
+            "VOID": "AA1007"
+        },
+        "email": "anthony.arnold@example.com",
+        "created_at": "2025-09-07T12:30:00Z",
+        "authentication": {
+            "method": "OAuth2",
+            "token": "stu901vwx234"
+        },
+        "roles": {
+            "BreakGlass": false,
+            "AdminUser": false,
+            "User": true,
+            "Reports_RO": true
+        },
+        "machine_info": {
+            "machine_id": "MCH1007",
+            "os": "macOS Ventura",
+            "ip_address": "192.168.1.104",
+            "last_login": "2025-09-07T12:30:00Z",
+            "installed_software": [
+                "Jaguar",
+                "Zephyr",
+                "Lilypad"
+            ]
+        },
+        "request_info": {
+            "request_id": "REQ234567",
+            "requested_at": "2025-09-07T12:25:00Z",
+            "hostname": "host7.example.com",
+            "shell_script": "analyze.sh",
+            "script_parameters": [
+                "--detailed",
+                "--export"
+            ]
+        }
+    },
+    {
+        "id": 10001008,
+        "name": {
+            "first_name": "Khadijah",
+            "middle_initial": null,
+            "last_name": "Ahmed",
+            "VOID": "KA1008"
+        },
+        "email": "khadijah.ahmed@example.com",
+        "created_at": "2025-09-07T12:35:00Z",
+        "authentication": {
+            "method": "OAuth2",
+            "token": "vwx234yz012"
+        },
+        "roles": {
+            "BreakGlass": false,
+            "AdminUser": false,
+            "User": true,
+            "Reports_RO": false
+        },
+        "machine_info": {
+            "machine_id": "MCH1008",
+            "os": "Ubuntu 22.04",
+            "ip_address": "192.168.1.105",
+            "last_login": "2025-09-07T12:35:00Z",
+            "installed_software": [
+                "Tiger",
+                "Tsunami",
+                "Lilypad"
+            ]
+        },
+        "request_info": {
+            "request_id": "REQ890123",
+            "requested_at": "2025-09-07T12:30:00Z",
+            "hostname": "host8.example.com",
+            "shell_script": "report.sh",
+            "script_parameters": [
+                "--summary",
+                "--email"
+            ]
+        }
+    },
+    {
+        "id": 10001007,
+        "name": {
+            "first_name": "Anthony",
+            "middle_initial": "D",
+            "last_name": "Arnold",
+            "VOID": "AA1007"
+        },
+        "email": "anthony.arnold@example.com",
+        "created_at": "2025-09-07T12:30:00Z",
+        "authentication": {
+            "method": "OAuth2",
+            "token": "stu901vwx234"
+        },
+        "roles": {
+            "BreakGlass": false,
+            "AdminUser": false,
+            "User": true,
+            "Reports_RO": false
+        },
+        "machine_info": {
+            "machine_id": "MCH1007",
+            "os": "macOS Ventura",
+            "ip_address": "192.168.1.104",
+            "last_login": "2025-09-07T12:30:00Z",
+            "installed_software": [
+                "Tiger",
+                "Tsunami",
+                "Cheyenne"
+            ]
+        },
+        "request_info": {
+            "request_id": "REQ234567",
+            "requested_at": "2025-09-07T12:25:00Z",
+            "hostname": "host7.example.com",
+            "shell_script": "analyze.sh",
+            "script_parameters": [
+                "--detailed",
+                "--export"
+            ]
+        }
+    },
+    {
+        "id": 10001008,
+        "name": {
+            "first_name": "Khadijah",
+            "middle_initial": null,
+            "last_name": "Ahmed",
+            "VOID": "KA1008"
+        },
+        "email": "khadijah.ahmed@example.com",
+        "created_at": "2025-09-07T12:35:00Z",
+        "authentication": {
+            "method": "OAuth2",
+            "token": "vwx234yz012"
+        },
+        "roles": {
+            "BreakGlass": false,
+            "AdminUser": false,
+            "User": true,
+            "Reports_RO": false
+        },
+        "machine_info": {
+            "machine_id": "MCH1008",
+            "os": "Ubuntu 22.04",
+            "ip_address": "192.168.1.105",
+            "last_login": "2025-09-07T12:35:00Z",
+            "installed_software": [
+                "Lion",
+                "Tsunami",
+                "Lilypad"
+            ]
+        },
+        "request_info": {
+            "request_id": "REQ890123",
+            "requested_at": "2025-09-07T12:30:00Z",
+            "hostname": "host8.example.com",
+            "shell_script": "report.sh",
+            "script_parameters": [
+                "--summary",
+                "--email"
+            ]
+        }
+    },
+    {
+        "id": 10001009,
+        "name": {
+            "first_name": "Zaid",
+            "middle_initial": "K",
+            "last_name": "Shakir",
+            "VOID": "ZS1009"
+        },
+        "email": "zaid.shakir@example.com",
+        "created_at": "2025-09-07T12:40:00Z",
+        "authentication": {
+            "method": "OAuth2",
+            "token": "xyz789abc123"
+        },
+        "roles": {
+            "BreakGlass": false,
+            "AdminUser": false,
+            "User": true,
+            "Reports_RO": false
+        },
+        "machine_info": {
+            "machine_id": "MCH1009",
+            "os": "Windows 11",
+            "ip_address": "192.168.1.106",
+            "last_login": "2025-09-07T12:40:00Z",
+            "installed_software": [
+                "Lion",
+                "Tsunami",
+                "Lilypad"
+            ]
+        },
+        "request_info": {
+            "request_id": "REQ123890",
+            "requested_at": "2025-09-07T12:35:00Z",
+            "hostname": "host9.example.com",
+            "shell_script": "deploy_update.sh",
+            "script_parameters": [
+                "--force",
+                "--silent"
+            ]
+        }
+    },
+    {
+        "id": 10001010,
+        "name": {
+            "first_name": "Kevin",
+            "middle_initial": "W",
+            "last_name": "Helewski",
+            "VOID": "KH1008"
+        },
+        "email": "kevin.helewski@example.com",
+        "created_at": "2025-09-07T12:45:00Z",
+        "authentication": {
+            "method": "OAuth2",
+            "token": "abc123xyz456"
+        },
+        "roles": {
+            "BreakGlass": false,
+            "AdminUser": false,
+            "User": true,
+            "Reports_RO": false
+        },
+        "machine_info": {
+            "machine_id": "MCH1008",
+            "os": "Ubuntu 22.04",
+            "ip_address": "192.168.1.105",
+            "last_login": "2025-09-07T12:35:00Z",
+            "installed_software": [
+                "Lion",
+                "Tsunami",
+                "Lilypad"
+            ]
+        },
+        "request_info": {
+            "request_id": "REQ890123",
+            "requested_at": "2025-09-07T12:30:00Z",
+            "hostname": "host8.example.com",
+            "shell_script": "report.sh",
+            "script_parameters": [
+                "--summary",
+                "--email"
+            ]
+        }
+    }
+]
