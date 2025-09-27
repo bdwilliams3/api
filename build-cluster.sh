@@ -9,6 +9,8 @@ CLUSTER_NAME="api-cluster"
 IMAGE_NAME="api:latest"
 CONFIG_FILE="kind-config.yaml"
 DEPLOYMENT_FILE="deployment.yaml"
+HOSTNAME_ALIAS="kube-api-test"
+FORWARD_PORT="3000"
 
 echo "🚀 Starting KIND cluster rebuild..."
 
@@ -25,6 +27,69 @@ print_warning() {
     echo -e "\033[1;33m[WARNING]\033[0m $1"
 }
 
+# Function to add/update hosts entry
+update_hosts_file() {
+    local hostname="$1"
+    local hosts_file
+    
+    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
+        hosts_file="C:/Windows/System32/drivers/etc/hosts"
+    else
+        hosts_file="/etc/hosts"
+    fi
+    
+    print_status "Updating hosts file with $hostname..."
+    
+    # Remove existing entry if it exists
+    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
+        # Windows - requires admin privileges
+        powershell -Command "
+            \$hostsFile = 'C:\Windows\System32\drivers\etc\hosts'
+            \$content = Get-Content \$hostsFile | Where-Object { \$_ -notmatch '$hostname' }
+            \$content += '127.0.0.1 $hostname'
+            Set-Content -Path \$hostsFile -Value \$content
+        " 2>/dev/null || print_warning "Could not update hosts file automatically. Please add '127.0.0.1 $hostname' to $hosts_file manually"
+    else
+        # Linux/Mac
+        if sudo grep -q "$hostname" "$hosts_file" 2>/dev/null; then
+            sudo sed -i "/$hostname/d" "$hosts_file"
+        fi
+        echo "127.0.0.1 $hostname" | sudo tee -a "$hosts_file" >/dev/null || {
+            print_warning "Could not update hosts file automatically."
+            print_warning "Please add the following line to $hosts_file:"
+            echo "127.0.0.1 $hostname"
+        }
+    fi
+}
+
+# Function to start port forwarding in background
+start_port_forward() {
+    local service_name="$1"
+    local forward_port="$2"
+    local target_port="$3"
+    
+    print_status "Starting port forwarding: localhost:$forward_port -> $service_name:$target_port"
+    
+    # Kill any existing port forwarding on this port
+    pkill -f "kubectl.*port-forward.*:$forward_port" 2>/dev/null || true
+    
+    # Start port forwarding in background
+    kubectl port-forward service/$service_name $forward_port:$target_port &
+    PORT_FORWARD_PID=$!
+    
+    # Wait a moment for port forwarding to establish
+    sleep 2
+    
+    # Check if port forwarding is working
+    if kill -0 $PORT_FORWARD_PID 2>/dev/null; then
+        print_status "Port forwarding established (PID: $PORT_FORWARD_PID)"
+        echo $PORT_FORWARD_PID > /tmp/kubectl-port-forward.pid
+    else
+        print_error "Port forwarding failed to start"
+        return 1
+    fi
+}
+
 # Check if required files exist
 if [ ! -f "$CONFIG_FILE" ]; then
     print_error "kind-config.yaml not found!"
@@ -32,7 +97,7 @@ if [ ! -f "$CONFIG_FILE" ]; then
 fi
 
 if [ ! -f "$DEPLOYMENT_FILE" ]; then
-    print_error "api-deployment.yaml not found!"
+    print_error "deployment.yaml not found!"
     exit 1
 fi
 
@@ -47,7 +112,7 @@ print_status "Creating KIND cluster..."
 kind create cluster --config=$CONFIG_FILE --name=$CLUSTER_NAME
 
 # Step 2: Check if Docker image exists
-if ! docker images | grep -q "my-api.*latest"; then
+if ! docker images | grep -q "api.*latest"; then
     print_warning "Docker image '$IMAGE_NAME' not found. Building..."
     if [ -f "Dockerfile" ]; then
         docker build -t $IMAGE_NAME .
@@ -108,7 +173,7 @@ kubectl apply -f $DEPLOYMENT_FILE
 
 # Step 8: Wait for deployment to be ready
 print_status "Waiting for API deployment to be ready..."
-kubectl wait --for=condition=available --timeout=300s deployment/my-api
+kubectl wait --for=condition=available --timeout=300s deployment/k-api
 
 # Step 9: Wait for LoadBalancer to get external IP
 print_status "Waiting for LoadBalancer to get external IP..."
@@ -121,7 +186,19 @@ for i in {1..30}; do
     sleep 2
 done
 
-# Step 10: Display results
+# Step 10: Update hosts file
+update_hosts_file "$HOSTNAME_ALIAS"
+
+# Step 11: Start port forwarding
+# Detect the target port from the service
+TARGET_PORT=$(kubectl get svc k-api-service -o jsonpath='{.spec.ports[0].port}')
+if [ -z "$TARGET_PORT" ]; then
+    TARGET_PORT="80"  # Default fallback
+fi
+
+start_port_forward "k-api-service" "$FORWARD_PORT" "$TARGET_PORT"
+
+# Step 12: Display results
 echo
 echo "🎉 Cluster rebuild complete!"
 echo "=================================="
@@ -140,24 +217,62 @@ echo
 
 # Test API if external IP is available
 if [ -n "$EXTERNAL_IP" ]; then
-    print_status "API is available at: http://$EXTERNAL_IP"
-    print_status "Testing API connection..."
+    print_status "API is available at:"
+    echo "  • Internal cluster: http://$EXTERNAL_IP"
+    echo "  • External access:  http://$HOSTNAME_ALIAS:$FORWARD_PORT"
+    echo
     
-    if curl -s --max-time 5 "http://$EXTERNAL_IP/api/data" >/dev/null; then
-        echo "✅ API is responding!"
+    print_status "Testing API connection via port forward..."
+    
+    # Wait a bit more for the API to be fully ready
+    sleep 3
+    
+    if curl -s --max-time 10 "http://localhost:$FORWARD_PORT/api/data" >/dev/null; then
+        echo "✅ API is responding via port forward!"
         echo
-        echo "Test commands:"
-        echo "  curl http://$EXTERNAL_IP/api/data"
-        echo "  curl -X POST http://$EXTERNAL_IP/api/data -H 'Content-Type: application/json' -d '{\"test\": \"data\"}'"
+        echo "🌐 Browser URLs:"
+        echo "  http://$HOSTNAME_ALIAS:$FORWARD_PORT/api/data"
+        echo "  http://localhost:$FORWARD_PORT/api/data"
         echo
-        echo "For Burp Suite testing:"
-        echo "  curl --proxy 127.0.0.1:8081 http://$EXTERNAL_IP/api/data"
+        echo "🧪 Test commands:"
+        echo "  curl http://$HOSTNAME_ALIAS:$FORWARD_PORT/api/data"
+        echo "  curl -X POST http://$HOSTNAME_ALIAS:$FORWARD_PORT/api/data -H 'Content-Type: application/json' -d '{\"test\": \"data\"}'"
+        echo
+        echo "🔍 For Burp Suite testing:"
+        echo "  curl --proxy 127.0.0.1:8080 http://$HOSTNAME_ALIAS:$FORWARD_PORT/api/data"
+        echo
+        echo "📋 To stop port forwarding later:"
+        echo "  pkill -f \"kubectl.*port-forward.*:$FORWARD_PORT\""
     else
-        print_warning "API not responding yet, may need a few more seconds to start"
+        print_warning "API not responding via port forward yet, may need a few more seconds to start"
+        echo "Try manually: curl http://$HOSTNAME_ALIAS:$FORWARD_PORT/api/data"
     fi
 else
     print_warning "External IP not assigned yet. Check with: kubectl get svc k-api-service"
+    echo "But you can still access via: http://$HOSTNAME_ALIAS:$FORWARD_PORT"
 fi
 
 echo
+echo "🎯 Ready for browser testing at: http://$HOSTNAME_ALIAS:$FORWARD_PORT/api/data"
 print_status "Rebuild complete! 🚀"
+
+# Keep the script running to maintain port forwarding
+if [ -n "$PORT_FORWARD_PID" ] && kill -0 $PORT_FORWARD_PID 2>/dev/null; then
+    echo
+    print_status "Port forwarding is active. Press Ctrl+C to stop and cleanup."
+    
+    # Setup cleanup on exit
+    cleanup() {
+        echo
+        print_status "Cleaning up..."
+        kill $PORT_FORWARD_PID 2>/dev/null || true
+        rm -f /tmp/kubectl-port-forward.pid
+        print_status "Port forwarding stopped."
+        exit 0
+    }
+    
+    trap cleanup SIGINT SIGTERM
+    
+    # Wait for interrupt
+    wait $PORT_FORWARD_PID
+fi
