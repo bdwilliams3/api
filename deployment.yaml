@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: k-api
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: k-api
+  template:
+    metadata:
+      labels:
+        app: k-api
+    spec:
+      containers:
+      - name: k-api
+        image: api:latest
+        imagePullPolicy: Never  # Critical for KIND!
+        ports:
+        - containerPort: 5000
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "256Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: k-api-service
+spec:
+  selector:
+    app: k-api
+  ports:
+  - name: http
+    port: 80
+    targetPort: 5000
+  type: LoadBalancer
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: k-api-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - host: api.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: k-api-service
+            port:
+              number: 80
