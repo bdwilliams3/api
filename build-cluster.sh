@@ -107,22 +107,15 @@ if kind get clusters | grep -q "$CLUSTER_NAME"; then
     kind delete cluster --name=$CLUSTER_NAME
 fi
 
-# Step 1: Create KIND cluster
+# Step 1: Build Docker image
+print_status "Building Docker image..."
+docker build -t $IMAGE_NAME .
+
+# Step 2: Create KIND cluster
 print_status "Creating KIND cluster..."
 kind create cluster --config=$CONFIG_FILE --name=$CLUSTER_NAME
 
-# Step 2: Check if Docker image exists
-if ! docker images | grep -q "api.*latest"; then
-    print_warning "Docker image '$IMAGE_NAME' not found. Building..."
-    if [ -f "Dockerfile" ]; then
-        docker build -t $IMAGE_NAME .
-    else
-        print_error "Dockerfile not found! Please build your image first."
-        exit 1
-    fi
-fi
-
-# Step 3: Load Docker image into KIND
+# Step 3: Load Docker image into KIND cluster
 print_status "Loading Docker image into KIND cluster..."
 kind load docker-image $IMAGE_NAME --name=$CLUSTER_NAME
 
