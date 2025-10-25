@@ -15,6 +15,11 @@ def add_security_headers(response):
     response.headers['Content-Security-Policy'] = "default-src 'self'"
     return response
 
+# Health check endpoint (no auth required)
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({"status": "healthy"}), 200
+
 # Load users database
 def load_users():
     try:
@@ -200,4 +205,4 @@ def delete_data(item_id):
     return jsonify(deleted_entry), 200
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=8080)
