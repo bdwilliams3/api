@@ -1,11 +1,39 @@
 from flask import Flask, jsonify, request
 import json
-import secrets
-import hashlib
+import jwt
 from datetime import datetime, timedelta
 from functools import wraps
+import os
+import hvac
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 app = Flask(__name__)
+
+# Vault Configuration
+VAULT_ADDR = os.getenv('VAULT_ADDR', 'http://vault.vault.svc.cluster.local:8200')
+VAULT_ROLE = os.getenv('VAULT_ROLE', 'api-role')
+K8S_SA_TOKEN_PATH = '/var/run/secrets/kubernetes.io/serviceaccount/token'
+
+# JWT Configuration
+JWT_ALGORITHM = 'HS256'
+JWT_EXP_HOURS = 1  # JWT expires in 1 hour
+
+# Initialize Vault client
+vault_client = None
+jwt_secret = None
+clients_cache = {}
+cache_timestamp = None
+CACHE_TTL = 300  # 5 minutes
+
+# Rate limiting
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri="memory://"
+)
+
 @app.after_request
 def add_security_headers(response):
     response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
@@ -15,38 +43,98 @@ def add_security_headers(response):
     response.headers['Content-Security-Policy'] = "default-src 'self'"
     return response
 
+# Initialize Vault connection
+def init_vault():
+    global vault_client, jwt_secret
+    try:
+        # Read Kubernetes service account token
+        with open(K8S_SA_TOKEN_PATH, 'r') as f:
+            k8s_token = f.read().strip()
+        
+        # Create Vault client
+        client = hvac.Client(url=VAULT_ADDR)
+        
+        # Authenticate with Kubernetes auth method
+        auth_response = client.auth.kubernetes.login(
+            role=VAULT_ROLE,
+            jwt=k8s_token
+        )
+        
+        vault_client = client
+        
+        # Read JWT secret from Vault
+        jwt_secret_data = vault_client.secrets.kv.v2.read_secret_version(
+            path='jwt-config',
+            mount_point='secret'
+        )
+        jwt_secret = jwt_secret_data['data']['data']['secret']
+        
+        app.logger.info("Successfully connected to Vault")
+        return True
+        
+    except Exception as e:
+        app.logger.error(f"Failed to connect to Vault: {e}")
+        return False
+
+# Load clients from Vault with caching
+def load_clients():
+    global clients_cache, cache_timestamp
+    
+    # Check cache
+    if cache_timestamp and (datetime.utcnow() - cache_timestamp).total_seconds() < CACHE_TTL:
+        return clients_cache
+    
+    try:
+        # List all client secrets
+        client_list = vault_client.secrets.kv.v2.list_secrets(
+            path='clients',
+            mount_point='secret'
+        )
+        
+        clients = {}
+        for client_key in client_list['data']['keys']:
+            client_data = vault_client.secrets.kv.v2.read_secret_version(
+                path=f'clients/{client_key}',
+                mount_point='secret'
+            )
+            data = client_data['data']['data']
+            clients[data['client_id']] = data['client_secret']
+        
+        clients_cache = clients
+        cache_timestamp = datetime.utcnow()
+        return clients
+        
+    except Exception as e:
+        app.logger.error(f"Failed to load clients from Vault: {e}")
+        return clients_cache  # Return cached data if available
+
 # Health check endpoint (no auth required)
 @app.route('/health', methods=['GET'])
 def health():
-    return jsonify({"status": "healthy"}), 200
+    vault_status = "connected" if vault_client and vault_client.is_authenticated() else "disconnected"
+    return jsonify({
+        "status": "healthy",
+        "vault": vault_status
+    }), 200
 
-# Load users database
-def load_users():
+# Generate JWT token
+def generate_jwt(client_id):
+    payload = {
+        'client_id': client_id,
+        'exp': datetime.utcnow() + timedelta(hours=JWT_EXP_HOURS),
+        'iat': datetime.utcnow()
+    }
+    return jwt.encode(payload, jwt_secret, algorithm=JWT_ALGORITHM)
+
+# Decode JWT token
+def decode_jwt(token):
     try:
-        with open('users.json') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return {"users": []}
-
-def save_users(users_data):
-    with open('users.json', 'w') as f:
-        json.dump(users_data, f, indent=2)
-
-# Load active tokens (in production, use Redis or a proper database)
-def load_tokens():
-    try:
-        with open('tokens.json') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return {}
-
-def save_tokens(tokens):
-    with open('tokens.json', 'w') as f:
-        json.dump(tokens, f, indent=2)
-
-# Hash password
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
+        payload = jwt.decode(token, jwt_secret, algorithms=[JWT_ALGORITHM])
+        return payload
+    except jwt.ExpiredSignatureError:
+        return None
+    except jwt.InvalidTokenError:
+        return None
 
 # Authentication decorator
 def require_auth(f):
@@ -60,109 +148,58 @@ def require_auth(f):
         try:
             scheme, token = auth_header.split()
             if scheme.lower() != 'bearer':
-                return jsonify({"error": "Invalid authentication scheme"}), 401
+                return jsonify({"error": "Invalid authentication scheme. Use 'Bearer <token>'"}), 401
             
-            # Validate token
-            tokens = load_tokens()
-            if token not in tokens:
-                return jsonify({"error": "Invalid or expired token"}), 403
+            # Decode and validate JWT
+            payload = decode_jwt(token)
+            if not payload:
+                return jsonify({"error": "Invalid or expired token"}), 401
             
-            # Check token expiration (optional)
-            token_data = tokens[token]
-            expiry = datetime.fromisoformat(token_data['expires'])
-            if datetime.now() > expiry:
-                return jsonify({"error": "Token expired"}), 403
-            
-            # Add user info to request context
-            request.current_user = token_data['username']
+            # Add client info to request context
+            request.client_id = payload['client_id']
             
         except ValueError:
             return jsonify({"error": "Invalid Authorization header format"}), 401
+        except Exception as e:
+            return jsonify({"error": "Authentication failed"}), 401
         
         return f(*args, **kwargs)
     return decorated_function
 
-# LOGIN ENDPOINT
-@app.route('/api/login', methods=['POST'])
-def login():
+# TOKEN ENDPOINT - Exchange client_id/client_secret for JWT
+@app.route('/api/token', methods=['POST'])
+@limiter.limit("10 per minute")
+def get_token():
     credentials = request.json
-    username = credentials.get('username')
-    password = credentials.get('password')
+    client_id = credentials.get('client_id')
+    client_secret = credentials.get('client_secret')
     
-    if not username or not password:
-        return jsonify({"error": "Username and password required"}), 400
+    if not client_id or not client_secret:
+        return jsonify({"error": "client_id and client_secret required"}), 400
     
-    # Validate credentials
-    users_data = load_users()
-    user = next((u for u in users_data['users'] if u['username'] == username), None)
+    # Validate client credentials from Vault
+    clients = load_clients()
     
-    if not user or user['password'] != hash_password(password):
+    if client_id not in clients or clients[client_id] != client_secret:
         return jsonify({"error": "Invalid credentials"}), 401
     
-    # Generate token
-    token = secrets.token_urlsafe(32)
-    
-    # Store token with expiration (24 hours)
-    tokens = load_tokens()
-    tokens[token] = {
-        "username": username,
-        "created": datetime.now().isoformat(),
-        "expires": (datetime.now() + timedelta(hours=24)).isoformat()
-    }
-    save_tokens(tokens)
+    # Generate JWT
+    token = generate_jwt(client_id)
     
     return jsonify({
-        "token": token,
-        "expires_in": 86400  # 24 hours in seconds
+        "access_token": token,
+        "token_type": "Bearer",
+        "expires_in": JWT_EXP_HOURS * 3600  # seconds
     }), 200
 
-# LOGOUT ENDPOINT
-@app.route('/api/logout', methods=['POST'])
-@require_auth
-def logout():
-    auth_header = request.headers.get('Authorization')
-    token = auth_header.split()[1]
-    
-    tokens = load_tokens()
-    if token in tokens:
-        del tokens[token]
-        save_tokens(tokens)
-    
-    return jsonify({"message": "Logged out successfully"}), 200
-
-# REGISTER ENDPOINT (optional)
-@app.route('/api/register', methods=['POST'])
-def register():
-    user_data = request.json
-    username = user_data.get('username')
-    password = user_data.get('password')
-    
-    if not username or not password:
-        return jsonify({"error": "Username and password required"}), 400
-    
-    users_data = load_users()
-    
-    # Check if user exists
-    if any(u['username'] == username for u in users_data['users']):
-        return jsonify({"error": "Username already exists"}), 409
-    
-    # Add new user
-    users_data['users'].append({
-        "username": username,
-        "password": hash_password(password)
-    })
-    save_users(users_data)
-    
-    return jsonify({"message": "User registered successfully"}), 201
-
-# Your existing data endpoints
+# Data endpoints
 def load_data():
     with open('data.json') as json_file:
         return json.load(json_file)
 
 def save_data(data):
     with open('data.json', 'w') as json_file:
-        json.dump(data, json_file)
+        json.dump(data, json_file, indent=2)
 
 @app.route('/api/data', methods=['GET'])
 @require_auth
@@ -205,4 +242,9 @@ def delete_data(item_id):
     return jsonify(deleted_entry), 200
 
 if __name__ == '__main__':
+    # Initialize Vault connection on startup
+    if not init_vault():
+        app.logger.error("Failed to initialize Vault connection")
+        exit(1)
+    
     app.run(host='0.0.0.0', port=8080)

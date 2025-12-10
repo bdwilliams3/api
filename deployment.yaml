@@ -1,3 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-data
+  namespace: default
+data:
+  data.json: |
+    []
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -13,12 +22,22 @@ spec:
       labels:
         app: k-api
     spec:
+      serviceAccountName: k-api-sa
       containers:
       - name: k-api
         image: api:latest
-        imagePullPolicy: Never  # Critical for KIND!
+        imagePullPolicy: Never
         ports:
-        - containerPort: 5000
+        - containerPort: 8080
+        env:
+        - name: VAULT_ADDR
+          value: "http://vault.vault.svc.cluster.local:8200"
+        - name: VAULT_ROLE
+          value: "api-role"
+        volumeMounts:
+        - name: data-volume
+          mountPath: /app/data.json
+          subPath: data.json
         resources:
           requests:
             cpu: "100m"
@@ -26,6 +45,22 @@ spec:
           limits:
             cpu: "500m"
             memory: "256Mi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: data-volume
+        configMap:
+          name: api-data
 ---
 apiVersion: v1
 kind: Service
@@ -37,18 +72,20 @@ spec:
   ports:
   - name: http
     port: 80
-    targetPort: 5000
-  type: LoadBalancer
+    targetPort: 8080
+  type: ClusterIP
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: k-api-ingress
   annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
 spec:
+  ingressClassName: nginx
   rules:
-  - host: api.local
+  - host: sample-api.com
     http:
       paths:
       - path: /
