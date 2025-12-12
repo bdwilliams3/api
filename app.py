@@ -110,6 +110,7 @@ def load_clients():
 
 # Health check endpoint (no auth required)
 @app.route('/health', methods=['GET'])
+@limiter.exempt
 def health():
     vault_status = "connected" if vault_client and vault_client.is_authenticated() else "disconnected"
     return jsonify({

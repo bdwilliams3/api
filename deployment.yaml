@@ -1,12 +1,3 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: api-data
-  namespace: default
-data:
-  data.json: |
-    []
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -22,11 +13,23 @@ spec:
       labels:
         app: k-api
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 2000
+        seccompProfile:
+          type: RuntimeDefault
       serviceAccountName: k-api-sa
       containers:
       - name: k-api
         image: api:latest
         imagePullPolicy: Never
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL        
         ports:
         - containerPort: 8080
         env:
@@ -50,13 +53,13 @@ spec:
             path: /health
             port: 8080
           initialDelaySeconds: 30
-          periodSeconds: 10
+          periodSeconds: 120
         readinessProbe:
           httpGet:
             path: /health
             port: 8080
           initialDelaySeconds: 5
-          periodSeconds: 5
+          periodSeconds: 60      
       volumes:
       - name: data-volume
         configMap:
