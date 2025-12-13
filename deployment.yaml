@@ -4,7 +4,7 @@ metadata:
   name: k-api
   namespace: default
 spec:
-  replicas: 2
+  replicas: 4
   selector:
     matchLabels:
       app: k-api
@@ -24,7 +24,7 @@ spec:
       - name: k-api
         image: api:latest
         imagePullPolicy: Never
-        securityContext:
+        securityContext: 
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
           capabilities:
@@ -41,6 +41,8 @@ spec:
         - name: data-volume
           mountPath: /app/data.json
           subPath: data.json
+        - name: tmp-volume
+          mountPath: /tmp
         resources:
           requests:
             cpu: "100m"
@@ -64,6 +66,8 @@ spec:
       - name: data-volume
         configMap:
           name: api-data
+      - name: tmp-volume
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
