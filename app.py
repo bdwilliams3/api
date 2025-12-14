@@ -12,15 +12,15 @@ from flask_limiter.util import get_remote_address
 
 app = Flask(__name__)
 
-# Self-contained secrets (no Vault needed)
+# Self-contained secrets - varied formats for authenticity
 SECRETS = {
-    'api_key': 'sk_live_51HYzK2eZvKYlo2C9fZvKYlo2C',
+    'api_key': f"sk_live_{secrets.token_hex(20)}",  # Stripe-style key
     'basic_user': 'challenger',
-    'basic_pass': 'progress_unlocked',
-    'bearer_secret': secrets.token_hex(32),
-    'jwt_secret': secrets.token_hex(32),
-    'hmac_secret': secrets.token_hex(32),
-    'signature_key': secrets.token_hex(32)
+    'basic_pass': base64.b64encode(f"pass_{datetime.now().strftime('%Y%m%d')}".encode()).decode()[:16],
+    'bearer_secret': secrets.token_urlsafe(43),  # URL-safe base64, standard length
+    'jwt_secret': hashlib.sha256(f"jwt_{datetime.now().isoformat()}".encode()).hexdigest(),
+    'hmac_secret': base64.b64encode(secrets.token_bytes(32)).decode(),
+    'signature_key': secrets.token_hex(24) 
 }
 
 # Active bearer tokens (in-memory store)
