@@ -13,8 +13,8 @@ from flask_limiter.util import get_remote_address
 app = Flask(__name__)
 
 # Self-contained secrets - varied formats for authenticity
-SECRETS = {
-    'api_key': f"sk_live_{secrets.token_hex(20)}",  # Stripe-style key
+SUITE = {
+    'api_key': f"sa_active_{secrets.token_hex(20)}",  
     'basic_user': 'challenger',
     'basic_pass': base64.b64encode(f"pass_{datetime.now().strftime('%Y%m%d')}".encode()).decode()[:16],
     'bearer_secret': secrets.token_urlsafe(43),  # URL-safe base64, standard length
@@ -71,7 +71,7 @@ def level1():
     
     # Hidden hint in custom header
     response.headers['X-Next-Challenge'] = 'Level 2 seeks a key. Look for X-API-Key header.'
-    response.headers['X-Hint'] = f"The key you seek: {SECRETS['api_key']}"
+    response.headers['X-Hint'] = f"The key you seek: {SUITE['api_key']}"
     
     return response, 200
 
@@ -89,7 +89,7 @@ def level2():
             "hint": "Look at the previous level's response headers carefully."
         }), 401
     
-    if api_key != SECRETS['api_key']:
+    if api_key != SUITE['api_key']:
         return jsonify({
             "level": 2,
             "status": "locked",
@@ -106,7 +106,7 @@ def level2():
     }))
     
     # Encode credentials for next level
-    creds = f"{SECRETS['basic_user']}:{SECRETS['basic_pass']}"
+    creds = f"{SUITE['basic_user']}:{SUITE['basic_pass']}"
     encoded = base64.b64encode(creds.encode()).decode()
     
     response.headers['X-Next-Challenge'] = 'Level 3 requires Basic Authentication'
@@ -131,7 +131,7 @@ def level3():
         response.headers['WWW-Authenticate'] = 'Basic realm="Level 3"'
         return response, 401
     
-    if auth.username != SECRETS['basic_user'] or auth.password != SECRETS['basic_pass']:
+    if auth.username != SUITE['basic_user'] or auth.password != SUITE['basic_pass']:
         return jsonify({
             "level": 3,
             "status": "locked",
@@ -209,13 +209,13 @@ def level4():
     path = "/api/level/5"
     message = f"{method}|{path}|{timestamp}"
     signature = hmac.new(
-        SECRETS['signature_key'].encode(),
+        SUITE['signature_key'].encode(),
         message.encode(),
         hashlib.sha256
     ).hexdigest()
     
     response.headers['X-Next-Challenge'] = 'Level 5 requires request signing with timestamp'
-    response.headers['X-Signature-Key'] = SECRETS['signature_key']
+    response.headers['X-Signature-Key'] = SUITE['signature_key']
     response.headers['X-Signature-Format'] = 'HMAC-SHA256(method|path|timestamp)'
     response.headers['X-Example-Timestamp'] = timestamp
     response.headers['X-Example-Signature'] = signature
@@ -257,7 +257,7 @@ def level5():
     # Verify signature
     message = f"GET|/api/level/5|{timestamp}"
     expected = hmac.new(
-        SECRETS['signature_key'].encode(),
+        SUITE['signature_key'].encode(),
         message.encode(),
         hashlib.sha256
     ).hexdigest()
@@ -286,11 +286,11 @@ def level5():
         'exp': datetime.utcnow() + timedelta(hours=1),
         'iat': datetime.utcnow()
     }
-    token = jwt.encode(payload, SECRETS['jwt_secret'], algorithm='HS256')
+    token = jwt.encode(payload, SUITE['jwt_secret'], algorithm='HS256')
     
     response.headers['X-Next-Challenge'] = 'Level 6 requires a JWT token'
     response.headers['X-JWT-Token'] = token
-    response.headers['X-JWT-Secret'] = SECRETS['jwt_secret']
+    response.headers['X-JWT-Secret'] = SUITE['jwt_secret']
     response.headers['X-Algorithm'] = 'HS256'
     
     return response, 200
@@ -312,7 +312,7 @@ def level6():
     token = auth_header.split(' ')[1]
     
     try:
-        payload = jwt.decode(token, SECRETS['jwt_secret'], algorithms=['HS256'])
+        payload = jwt.decode(token, SUITE['jwt_secret'], algorithms=['HS256'])
         
         if payload.get('level') != 6:
             return jsonify({
@@ -344,7 +344,7 @@ def level6():
     }))
     
     response.headers['X-Next-Challenge'] = 'Level 7 requires HMAC signing with shared secret'
-    response.headers['X-HMAC-Secret'] = SECRETS['hmac_secret']
+    response.headers['X-HMAC-Secret'] = SUITE['hmac_secret']
     response.headers['X-HMAC-Format'] = 'HMAC-SHA256(secret + body_content)'
     response.headers['X-Method'] = 'POST with JSON body'
     
@@ -381,7 +381,7 @@ def level7():
         }), 400
     
     # Calculate expected HMAC
-    message = SECRETS['hmac_secret'] + body
+    message = SUITE['hmac_secret'] + body
     expected = hmac.new(
         message.encode(),
         digestmod=hashlib.sha256
@@ -624,7 +624,7 @@ def level10_token():
         'scope': 'final_level',
         'exp': datetime.utcnow() + timedelta(hours=1),
         'iat': datetime.utcnow()
-    }, SECRETS['jwt_secret'], algorithm='HS256')
+    }, SUITE['jwt_secret'], algorithm='HS256')
     
     # Clean up auth code
     del active_tokens[code]
@@ -656,7 +656,7 @@ def level10():
     token = auth_header.split(' ')[1]
     
     try:
-        payload = jwt.decode(token, SECRETS['jwt_secret'], algorithms=['HS256'])
+        payload = jwt.decode(token, SUITE['jwt_secret'], algorithms=['HS256'])
         
         if payload.get('scope') != 'final_level':
             return jsonify({
