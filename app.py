@@ -51,10 +51,11 @@ def level_0():
     res = make_response(jsonify({
         "message": "Welcome to the api Authentication Game.",
         "username": "api_hunter",
-        "next_level": "https://sample-api.com/api/level/1",
+        "next_level": "/api/level/1",
+        "hint": "Examine the response headers to find the password for the next gate."
     }))
     res.headers['X-Secret'] = 'p@s5W0rD'
-    return res, 200
+    return res
 
 # ==========================================
 # LEVEL 1: PROGRESSIVE BASIC AUTH
@@ -63,97 +64,86 @@ def level_0():
 def level_1():
     ip = get_remote_address()
     auth = request.authorization
-
+    
+    # SUCCESS: Reveal Level 2 Info
     if auth and auth.username == "api_hunter" and auth.password == "p@s5W0rD":
-        fail_tracker.pop(ip, None)
-        msg = get_terminal_banner(1, "You have successfully authenticated via basic auth. Keep checking headers for hints.")
-        res = make_response(jsonify(
-            {
-                "level": 1, 
-                "status": "passed", 
-                "message": msg, 
-                "next_level": "https://sample-api.com/api/level/1"
-                }
-            )
-        )
-        return res
+        fail_tracker.pop(ip, None) # Clear fails
+        return jsonify({
+            "status": "conquered",
+            "next_level": "/api/level/2",
+            "instruction": "Level 2 requires Custom Headers. Use X-API-Key and X-Identity-Token.",
+            "creds": "Use the same username and password from Level 1."
+        })
 
+    # FAILURE: Progressive Hints
     fail_tracker[ip] = fail_tracker.get(ip, 0) + 1
     count = fail_tracker[ip]
     hints = {
-        1: "Check the response headers. Look for 'WWW-Authenticate'.",
-        2: "The 'Basic' scheme is being requested.",
-        3: "Basic Auth needs 'username' (from Level 0) and the password 'password'."
+        1: "Did you check the headers in Level 0? Look for 'X-Secret'.",
+        2: "Level 1 uses Basic Auth. Use 'curl -u username:password'.",
+        3: "The username is 'api_hunter' and the password is 'p@s5W0rD'."
     }
-    res = make_response(jsonify({"level": 1, "hint": hints.get(count, [3])}), 401)
+    res = make_response(jsonify({"hint": hints.get(count, hints[3])}), 401)
     res.headers['WWW-Authenticate'] = 'Basic realm="Level 1"'
     return res
 
 # ==========================================
 # LEVEL 2: BEARER TOKEN
 # ==========================================
-@app.route('/api/level/2/token', methods=['POST'])
-def level_2_token():
-    # Only allow Level 1 users to get a token
-    auth = request.authorization
-    if auth and auth.username == "username" and auth.password == "password":
-        token = secrets.token_urlsafe(32)
-        fail_tracker[token] = {"type": "bearer", "exp": time.time() + 300}
-        return jsonify({"access_token": token, "token_type": "Bearer", "next": "/api/level/2"})
-    return jsonify({"error": "Valid Level 1 credentials required via POST"}), 401
-
 @app.route('/api/level/2', methods=['GET'])
 def level_2():
     ip = get_remote_address()
-    auth_header = request.headers.get('Authorization', '')
-    token = auth_header.replace('Bearer ', '')
+    api_key = request.headers.get('X-API-Key')
+    identity = request.headers.get('X-Identity-Token')
 
-    if token in fail_tracker and fail_tracker[token]['type'] == "bearer":
-        msg = get_terminal_banner(2, "The bearer token is valid. Onward to Level 3.")
-        return jsonify({"level": 2, "message": msg, "next": "/api/level/3/claim"})
+    # SUCCESS: Reveal Level 3 Info
+    if api_key == "p@s5W0rD" and identity == "api_hunter":
+        fail_tracker.pop(ip, None)
+        return jsonify({
+            "status": "conquered",
+            "next_level": "/api/level/3",
+            "instruction": "Level 3 requires a JWT. Sign it with HS256.",
+            "payload": {"user": "api_hunter", "role": "admin"},
+            "secret_key": "p@s5W0rD"
+        })
 
+    # FAILURE: Progressive Hints
     fail_tracker[ip] = fail_tracker.get(ip, 0) + 1
     count = fail_tracker[ip]
     hints = {
-        1: "You need an 'Authorization' header.",
-        2: "The scheme is 'Bearer'. Use the token from the /token endpoint.",
-        3: "Format: 'Authorization: Bearer <token_here>'"
+        1: "Basic Auth won't work here. You need to send custom 'X-' headers.",
+        2: "You need 'X-API-Key' and 'X-Identity-Token'. Check Level 1's success message.",
+        3: "Try: curl -H 'X-API-Key: p@s5W0rD' -H 'X-Identity-Token: api_hunter' ..."
     }
-    return jsonify({"level": 2, "hint": hints.get(count, hints[3])}), 401
+    return jsonify({"hint": hints.get(count, hints[3])}), 401
 
 # ==========================================
 # LEVEL 3: JWT (STAKEHOLDER IDENTITY)
 # ==========================================
-@app.route('/api/level/3/claim', methods=['POST'])
-def level_3_claim():
-    # Users must claim their role to get a JWT
-    token = jwt.encode({
-        "client_id": "username",
-        "role": "player",
-        "exp": datetime.utcnow() + timedelta(hours=1)
-    }, JWT_SECRET, algorithm="HS256")
-    return jsonify({"jwt": token, "hint": "Use this as a Bearer token at /api/level/3"})
-
 @app.route('/api/level/3', methods=['GET'])
 def level_3():
     ip = get_remote_address()
-    token = request.headers.get('Authorization', '').replace('Bearer ', '')
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
-        if payload.get("role") == "player":
-            msg = get_terminal_banner(3, "JWT Identity Verified. Level 4 awaits.")
-            return jsonify({"level": 3, "message": msg, "next": "/api/level/4"})
-    except:
-        pass
+    auth_header = request.headers.get('Authorization', '')
 
+    # SUCCESS
+    if auth_header.startswith('Bearer '):
+        token = auth_header.split(" ")[1]
+        try:
+            payload = jwt.decode(token, "p@s5W0rD", algorithms=["HS256"])
+            if payload.get("role") == "admin":
+                return jsonify({"status": "conquered", "flag": "FLAG{auth_gauntlet_master}"})
+        except:
+            pass
+
+    # FAILURE: Progressive Hints
     fail_tracker[ip] = fail_tracker.get(ip, 0) + 1
     count = fail_tracker[ip]
     hints = {
-        1: "Level 3 uses a Signed JWT.",
-        2: "Check the /api/level/3/claim endpoint.",
-        3: "Decode the JWT at jwt.io to see your identity, then send it as a Bearer token."
+        1: "You need a Bearer token. Did you build the JWT as instructed in Level 2?",
+        2: "The JWT must be signed with 'p@s5W0rD' and have the 'role' set to 'admin'.",
+        3: "Use jwt.io to craft your token. Header: HS256, Payload: {'user':'api_hunter','role':'admin'}"
     }
-    return jsonify({"level": 3, "hint": hints.get(count, hints[3])}), 401
+    return jsonify({"hint": hints.get(count, hints[3])}), 401
 
 # ==========================================
 # LEVEL 4: HMAC SIGNING
