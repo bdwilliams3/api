@@ -4,7 +4,7 @@ metadata:
   name: k-api
   namespace: default
 spec:
-  replicas: 4
+  replicas: 3
   selector:
     matchLabels:
       app: k-api
@@ -13,13 +13,12 @@ spec:
       labels:
         app: k-api
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
-        fsGroup: 2000
         seccompProfile:
           type: RuntimeDefault
-      serviceAccountName: k-api-sa
       containers:
       - name: k-api
         image: api:latest
@@ -32,17 +31,6 @@ spec:
             - ALL        
         ports:
         - containerPort: 8080
-        env:
-        - name: VAULT_ADDR
-          value: "http://vault.vault.svc.cluster.local:8200"
-        - name: VAULT_ROLE
-          value: "api-role"
-        volumeMounts:
-        - name: data-volume
-          mountPath: /app/data.json
-          subPath: data.json
-        - name: tmp-volume
-          mountPath: /tmp
         resources:
           requests:
             cpu: "100m"
@@ -52,53 +40,13 @@ spec:
             memory: "256Mi"
         livenessProbe:
           httpGet:
-            path: /health
+            path: /api
             port: 8080
-          initialDelaySeconds: 30
-          periodSeconds: 120
+          initialDelaySeconds: 10
+          periodSeconds: 30
         readinessProbe:
           httpGet:
-            path: /health
-            port: 8080
+            path: /api
+            port: 8080         
           initialDelaySeconds: 5
-          periodSeconds: 60      
-      volumes:
-      - name: data-volume
-        configMap:
-          name: api-data
-      - name: tmp-volume
-        emptyDir: {}
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: k-api-service
-spec:
-  selector:
-    app: k-api
-  ports:
-  - name: http
-    port: 80
-    targetPort: 8080
-  type: ClusterIP
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: k-api-ingress
-  annotations:
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
-    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
-spec:
-  ingressClassName: nginx
-  rules:
-  - host: sample-api.com
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: k-api-service
-            port:
-              number: 80
+          periodSeconds: 10
