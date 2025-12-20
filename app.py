@@ -40,9 +40,13 @@ def security_headers(response):
     return response
 
 # ==========================================
-# LEVEL 0: DISCOVERY
+# Public Access Levels
 # ==========================================
-app.route('/api', methods=['GET'])
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({"status": "UP"}), 200
+
+@app.route('/api', methods=['GET'])
 def level_0():
     res = make_response(jsonify({
         "message": "Welcome to the api Authentication Game.",
