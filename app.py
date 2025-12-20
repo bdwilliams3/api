@@ -42,14 +42,15 @@ def security_headers(response):
 # ==========================================
 # LEVEL 0: DISCOVERY
 # ==========================================
-@app.route('/api', methods=['GET'])
+app.route('/api', methods=['GET'])
 def level_0():
-    return jsonify({
+    res = make_response(jsonify({
         "message": "Welcome to the api Authentication Game.",
         "username": "api_hunter",
         "next_level": "https://sample-api.com/api/level/1",
-    }), 200
+    }))
     res.headers['X-Secret'] = 'p@s5W0rD'
+    return res, 200
 
 # ==========================================
 # LEVEL 1: PROGRESSIVE BASIC AUTH
@@ -80,7 +81,7 @@ def level_1():
         2: "The 'Basic' scheme is being requested.",
         3: "Basic Auth needs 'username' (from Level 0) and the password 'password'."
     }
-    res = make_response(jsonify({"level": 1, "hint": hints.get(count, hints[3])}), 401)
+    res = make_response(jsonify({"level": 1, "hint": hints.get(count, [3])}), 401)
     res.headers['WWW-Authenticate'] = 'Basic realm="Level 1"'
     return res
 
