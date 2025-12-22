@@ -1,0 +1,19 @@
+# Ignore all shell scripts
+*.sh
+*.bash
+*.zsh
+*.ksh
+*.fish
+
+# Ignore all Markdown files
+*.md
+*.markdown
+*.mdown
+*.mkd
+
+# Common README markdown names
+README.md
+README.markdown
+
+# Ensure .gitignore itself remains tracked
+!.gitignore
