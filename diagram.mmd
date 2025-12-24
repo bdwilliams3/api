@@ -1,0 +1,26 @@
+graph LR
+    subgraph Public["External"]
+        User((fa:fa-user User))
+    end
+
+    subgraph Laptop["Local Machine (Docker Desktop/Kind)"]
+        CF[fa:fa-cloud Cloudflare Tunnel]
+        
+        subgraph Cluster["fa:fa-dharmachakra K8s Cluster (KIND)"]
+            direction LR
+            GW[fa:fa-door-open Istio Gateway]
+            SVC[fa:fa-link k-api-service <br/>'Stable Address']
+            
+            subgraph Pod["k-api Pod (fa:fa-docker Docker)"]
+                Envoy[fa:fa-shield-halved Envoy Proxy <br/>'mTLS Bodyguard']
+                Flask[fa:fa-code Flask API <br/>'App Logic']
+            end
+        end
+    end
+
+    User -->|HTTPS| CF
+    CF -->|localhost:30080| GW
+    GW -.->|mTLS X.509 Check| Envoy
+    GW -->|Route via Service| SVC
+    SVC --> Envoy
+    Envoy -->|Plaintext Localhost| Flask
