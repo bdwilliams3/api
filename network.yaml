@@ -40,6 +40,7 @@ spec:
       protocol: HTTP
     hosts:
     - "sample-api.com"
+    - "monitor.sample-api.com"
 ---
 # VirtualService routes traffic from the Gateway to the specific internal service
 apiVersion: networking.istio.io/v1beta1
@@ -89,3 +90,23 @@ spec:
     to:
     - operation:
         methods: ["GET", "POST"]
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: grafana-route
+  namespace: istio-system
+spec:
+  hosts:
+  - "monitor.sample-api.com"
+  gateways:
+  - default/api-gateway
+  http:
+  - match:
+    - uri:
+        prefix: /
+    route:
+    - destination:
+        host: grafana.istio-system.svc.cluster.local
+        port:
+          number: 3000
