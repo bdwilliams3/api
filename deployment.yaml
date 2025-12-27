@@ -1,3 +1,11 @@
+# --- API SERVICE ACCOUNT ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: k-api-sa
+  namespace: default
+---
+# --- HARDENED API DEPLOYMENT ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -23,22 +31,144 @@ spec:
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
-          protocol: TCP
         securityContext:
           readOnlyRootFilesystem: true
           runAsNonRoot: true
-          runAsUser: 1000
+          runAsUser: 65532
+          runAsGroup: 65532
           allowPrivilegeEscalation: false
-          seccompProfile:
-            type: RuntimeDefault
-          capabilities:
-            drop: ["ALL"]
-        resources:
-          limits: { cpu: "200m", memory: "128Mi" }
-          requests: { cpu: "50m", memory: "64Mi" }
+        env:
+        - name: PYTHONPATH
+          value: "/usr/local/lib/python3.9/site-packages:/app"
         volumeMounts:
         - name: tmp
           mountPath: /tmp
       volumes:
       - name: tmp
         emptyDir: {}
+---
+# 1. PROMTAIL RBAC
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: promtail-sa
+  namespace: logging
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: promtail-clusterrole
+rules:
+- apiGroups: [""]
+  resources: ["nodes", "nodes/proxy", "services", "endpoints", "pods"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: promtail-clusterrolebinding
+subjects:
+- kind: ServiceAccount
+  name: promtail-sa
+  namespace: logging
+roleRef:
+  kind: ClusterRole
+  name: promtail-clusterrole
+  apiGroup: rbac.authorization.k8s.io
+---
+# 2. PROMTAIL CONFIGMAP
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: promtail-config
+  namespace: logging
+data:
+  promtail.yaml: |
+    server:
+      http_listen_port: 9080
+    positions:
+      filename: /tmp/positions.yaml
+    clients:
+      - url: http://loki-stack.logging.svc.cluster.local:3100/loki/api/v1/push
+    scrape_configs:
+    - job_name: kubernetes-pods
+      static_configs:
+      - targets: [localhost]
+        labels:
+          job: kubernetes-pods
+          __path__: /var/log/pods/*/*/*.log
+---
+# 3. LOKI SERVICE (The DNS entry)
+apiVersion: v1
+kind: Service
+metadata:
+  name: loki-stack
+  namespace: logging
+spec:
+  ports:
+  - port: 3100
+    protocol: TCP
+    targetPort: 3100
+  selector:
+    app: loki
+    release: loki-stack
+---
+# 4. LOKI DEPLOYMENT
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loki
+  namespace: logging
+spec:
+  selector:
+    matchLabels:
+      app: loki
+      release: loki-stack
+  template:
+    metadata:
+      labels:
+        app: loki
+        release: loki-stack
+    spec:
+      containers:
+      - name: loki
+        image: grafana/loki:2.9.0
+        ports:
+        - containerPort: 3100
+---
+# 5. PROMTAIL DAEMONSET
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: promtail
+  namespace: logging
+spec:
+  selector:
+    matchLabels:
+      app: promtail
+  template:
+    metadata:
+      labels:
+        app: promtail
+    spec:
+      serviceAccountName: promtail-sa
+      containers:
+      - name: promtail
+        image: grafana/promtail:2.9.0
+        args: ["-config.file=/etc/promtail/promtail.yaml"]
+        securityContext:
+          runAsUser: 0
+          privileged: true 
+        volumeMounts:
+        - name: config
+          mountPath: /etc/promtail
+        - name: logs
+          mountPath: /var/log
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: promtail-config
+      - name: logs
+        hostPath:
+          path: /var/log

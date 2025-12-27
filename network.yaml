@@ -1,120 +1,51 @@
-# Service defines how the application is reached internally and via NodePort
-apiVersion: v1
-kind: Service
+# Allow internal traffic within the logging namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
 metadata:
-  name: k-api-service
-  namespace: default
+  name: allow-logging-internal
+  namespace: logging
 spec:
-  type: NodePort
-  selector:
-    app: k-api
-  ports:
+  podSelector: {}
+  policyTypes: [Egress, Ingress]
+  ingress:
+  - from:
+    - podSelector: {}
+  egress:
+  - to:
+    - podSelector: {}
+
+---
+# Allow Promtail to talk to K8s API
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-logging-to-api
+  namespace: logging
+spec:
+  podSelector: { matchLabels: { app: promtail } }
+  policyTypes: [Egress]
+  egress:
+  - to: [{ ipBlock: { cidr: 0.0.0.0/0 } }]
+    ports:
     - protocol: TCP
-      port: 80
-      targetPort: 8080
-      nodePort: 30080
+      port: 443
+    - protocol: TCP
+      port: 6443
+
 ---
-# Gateway configures the Istio Ingress pod to listen for external traffic
-apiVersion: networking.istio.io/v1beta1
-kind: Gateway
+# Allow DNS (Required for loki-stack resolution)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
 metadata:
-  name: api-gateway
-  namespace: default
+  name: allow-logging-dns
+  namespace: logging
 spec:
-  selector:
-    istio: ingressgateway
-  servers:
-  - port:
-      number: 80
-      name: http
-      protocol: HTTP
-    hosts:
-    - "sample-api.com"
-    - "monitor.sample-api.com"
----
-# VirtualService routes traffic from the Gateway to the specific internal service
-apiVersion: networking.istio.io/v1beta1
-kind: VirtualService
-metadata:
-  name: api-route
-  namespace: default
-spec:
-  hosts:
-  - "sample-api.com"
-  gateways:
-  - api-gateway
-  http:
-  - route:
-    - destination:
-        host: k-api-service
-        port:
-          number: 80
----
-# DestinationRule ensures the Gateway uses Istio certificates for the internal handoff
-apiVersion: networking.istio.io/v1beta1
-kind: DestinationRule
-metadata:
-  name: k-api-mtls
-  namespace: default
-spec:
-  host: k-api-service
-  trafficPolicy:
-    tls:
-      mode: ISTIO_MUTUAL
----
-# AuthorizationPolicy restricts traffic to only come from the verified Gateway identity
-apiVersion: security.istio.io/v1beta1
-kind: AuthorizationPolicy
-metadata:
-  name: allow-gateway-only
-  namespace: default
-spec:
-  selector:
-    matchLabels:
-      app: k-api
-  action: ALLOW
-  rules:
-  - from:
-    - source:
-        principals: ["cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"]
-    to:
-    - operation:
-        methods: ["GET", "POST"]
----
-apiVersion: networking.istio.io/v1beta1
-kind: VirtualService
-metadata:
-  name: grafana-route
-  namespace: istio-system
-spec:
-  hosts:
-  - "monitor.sample-api.com"
-  gateways:
-  - default/api-gateway
-  http:
-  - match:
-    - uri:
-        prefix: /
-    route:
-    - destination:
-        host: grafana.istio-system.svc.cluster.local
-        port:
-          number: 3000
----
-apiVersion: security.istio.io/v1beta1
-kind: AuthorizationPolicy
-metadata:
-  name: hide-health-check
-  namespace: default
-spec:
-  selector:
-    matchLabels:
-      app: k-api
-  action: DENY
-  rules:
-  - from:
-    - source:
-        principals: ["cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"]
-    to:
-    - operation:
-        paths: ["/health"]
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+  - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } } }]
+    ports: 
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
