@@ -1,12 +1,51 @@
+# --- SECURITY ENCLAVE CONFIGURATION ---
 apiVersion: v1
-kind: ServiceAccount
+kind: Namespace
 metadata:
-  name: k-api-sa
+  name: security-system
+  labels:
+    istio-injection: disabled
 ---
 apiVersion: security.istio.io/v1beta1
 kind: PeerAuthentication
 metadata:
-  name: default-mtls
+  name: security-enclave-permissive
+  namespace: security-system
+spec:
+  mtls:
+    mode: PERMISSIVE
+---
+# Dedicated Network Policy for Security Agents
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: security-agent-access
+  namespace: security-system
+spec:
+  podSelector: {} # Targets Falco and KubeArmor
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0 # Allows communication to Kind API (172.18.0.2)
+    ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 6443
+---
+# --- APP ENCLAVE CONFIGURATION (DEFAULT) ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: k-api-sa
+  namespace: default
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default-mtls-strict
   namespace: default
 spec:
   mtls:

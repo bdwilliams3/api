@@ -11,6 +11,9 @@
 *.mdown
 *.mkd
 
+# Ignore all graphviz files
+*.dot
+
 # Common README markdown names
 README.md
 README.markdown
