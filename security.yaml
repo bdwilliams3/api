@@ -54,3 +54,19 @@ spec:
   policyTypes:
   - Ingress
   - Egress
+---
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: api-gateway-only
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: k-api
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals: ["cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"]

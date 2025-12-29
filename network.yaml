@@ -25,7 +25,8 @@ spec:
   podSelector: { matchLabels: { app: promtail } }
   policyTypes: [Egress]
   egress:
-  - to: [{ ipBlock: { cidr: 0.0.0.0/0 } }]
+  - to:
+    - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
     ports:
     - protocol: TCP
       port: 443
