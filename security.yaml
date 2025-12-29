@@ -35,13 +35,6 @@ spec:
     - protocol: TCP
       port: 6443
 ---
-# --- APP ENCLAVE CONFIGURATION (DEFAULT) ---
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: k-api-sa
-  namespace: default
----
 apiVersion: security.istio.io/v1beta1
 kind: PeerAuthentication
 metadata:
