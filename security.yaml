@@ -55,18 +55,20 @@ spec:
   - Ingress
   - Egress
 ---
----
 apiVersion: security.istio.io/v1beta1
 kind: AuthorizationPolicy
 metadata:
-  name: api-gateway-only
+  name: allow-gateway-only
   namespace: default
 spec:
+  action: ALLOW
   selector:
     matchLabels:
       app: k-api
-  action: ALLOW
   rules:
   - from:
     - source:
         principals: ["cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"]
+    to:
+    - operation:
+        methods: ["GET", "POST"]
