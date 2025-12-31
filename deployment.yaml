@@ -1,82 +1,30 @@
-# --- API SERVICE ACCOUNT ---
+# --- 1. NAMESPACES ---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: logging
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: security-system
+  labels:
+    istio-injection: disabled
+---
+# --- 2. SERVICE ACCOUNTS ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: k-api-sa
   namespace: default
 ---
-# --- HARDENED API DEPLOYMENT ---
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: k-api
-  namespace: default
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: k-api
-  template:
-    metadata:
-      labels:
-        app: k-api
-      annotations:
-        sidecar.istio.io/inject: "true"
-    spec:
-      serviceAccountName: k-api-sa
-      automountServiceAccountToken: false
-      containers:
-      - name: k-api
-        image: k-api:hardened
-        imagePullPolicy: IfNotPresent
-        ports:
-        - containerPort: 8080
-        securityContext:
-          readOnlyRootFilesystem: true
-          runAsNonRoot: true
-          runAsUser: 65532
-          runAsGroup: 65532
-          allowPrivilegeEscalation: false
-        env:
-        - name: PYTHONPATH
-          value: "/usr/local/lib/python3.9/site-packages:/app"
-        volumeMounts:
-        - name: tmp
-          mountPath: /tmp
-      volumes:
-      - name: tmp
-        emptyDir: {}
----
-# 1. PROMTAIL RBAC
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: promtail-sa
   namespace: logging
 ---
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: promtail-clusterrole
-rules:
-- apiGroups: [""]
-  resources: ["nodes", "nodes/proxy", "services", "endpoints", "pods"]
-  verbs: ["get", "list", "watch"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: promtail-clusterrolebinding
-subjects:
-- kind: ServiceAccount
-  name: promtail-sa
-  namespace: logging
-roleRef:
-  kind: ClusterRole
-  name: promtail-clusterrole
-  apiGroup: rbac.authorization.k8s.io
----
-# 2. PROMTAIL CONFIGMAP
+# --- 3. CONFIGURATIONS ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -92,43 +40,53 @@ data:
       - url: http://loki-stack.logging.svc.cluster.local:3100/loki/api/v1/push
     scrape_configs:
     - job_name: kubernetes-pods
-      static_configs:
-      - targets: [localhost]
-        labels:
-          job: kubernetes-pods
-          __path__: /var/log/pods/*/*/*.log
+      kubernetes_sd_configs:
+      - role: pod
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      - source_labels: [__meta_kubernetes_pod_container_name]
+        target_label: container
 ---
-# 3. LOKI SERVICE (The DNS entry)
-apiVersion: v1
-kind: Service
-metadata:
-  name: loki-stack
-  namespace: logging
-spec:
-  ports:
-  - port: 3100
-    protocol: TCP
-    targetPort: 3100
-  selector:
-    app: loki
-    release: loki-stack
----
-# 4. LOKI DEPLOYMENT
+# --- 4. WORKLOADS ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: loki
+  name: k-api
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: k-api
+  template:
+    metadata:
+      labels:
+        app: k-api
+    spec:
+      serviceAccountName: k-api-sa
+      containers:
+      - name: k-api
+        image: bdw_dev/k-api:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loki-stack
   namespace: logging
 spec:
   selector:
     matchLabels:
       app: loki
-      release: loki-stack
   template:
     metadata:
       labels:
         app: loki
-        release: loki-stack
     spec:
       containers:
       - name: loki
@@ -136,7 +94,6 @@ spec:
         ports:
         - containerPort: 3100
 ---
-# 5. PROMTAIL DAEMONSET
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:

@@ -1,39 +1,27 @@
-# --- SECURITY ENCLAVE CONFIGURATION ---
-apiVersion: v1
-kind: Namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
 metadata:
-  name: security-system
-  labels:
-    istio-injection: disabled
+  name: observation-role
+rules:
+- apiGroups: [""]
+  resources: ["nodes", "nodes/proxy", "services", "endpoints", "pods", "namespaces"]
+  verbs: ["get", "list", "watch"]
 ---
-apiVersion: security.istio.io/v1beta1
-kind: PeerAuthentication
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
 metadata:
-  name: security-enclave-permissive
+  name: observation-binding
+subjects:
+- kind: ServiceAccount
+  name: promtail-sa
+  namespace: logging
+- kind: ServiceAccount
+  name: falco-sa
   namespace: security-system
-spec:
-  mtls:
-    mode: PERMISSIVE
----
-# Dedicated Network Policy for Security Agents
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: security-agent-access
-  namespace: security-system
-spec:
-  podSelector: {} # Targets Falco and KubeArmor
-  policyTypes:
-  - Egress
-  egress:
-  - to:
-    - ipBlock:
-        cidr: 0.0.0.0/0 # Allows communication to Kind API (172.18.0.2)
-    ports:
-    - protocol: TCP
-      port: 443
-    - protocol: TCP
-      port: 6443
+roleRef:
+  kind: ClusterRole
+  name: observation-role
+  apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: security.istio.io/v1beta1
 kind: PeerAuthentication
@@ -47,28 +35,8 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: default-deny-all
+  name: global-deny-all
   namespace: default
 spec:
   podSelector: {}
-  policyTypes:
-  - Ingress
-  - Egress
----
-apiVersion: security.istio.io/v1beta1
-kind: AuthorizationPolicy
-metadata:
-  name: allow-gateway-only
-  namespace: default
-spec:
-  action: ALLOW
-  selector:
-    matchLabels:
-      app: k-api
-  rules:
-  - from:
-    - source:
-        principals: ["cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"]
-    to:
-    - operation:
-        methods: ["GET", "POST"]
+  policyTypes: [Ingress, Egress]
