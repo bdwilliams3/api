@@ -69,7 +69,7 @@ spec:
       serviceAccountName: k-api-sa
       containers:
       - name: k-api
-        image: bdw_dev/k-api:latest
+        image: bdw_dev/k-api:hardened
         imagePullPolicy: Never
         ports:
         - containerPort: 8080
