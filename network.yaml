@@ -1,27 +1,31 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-loki-ingress
+  name: vector-to-clickhouse
   namespace: logging
 spec:
   podSelector:
     matchLabels:
-      app: loki
-  policyTypes: [Ingress]
-  ingress:
-  - from:
-    - namespaceSelector: {}
+      app: vector
+  policyTypes: [Egress]
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: clickhouse
     ports:
     - protocol: TCP
-      port: 3100
+      port: 8123
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-system-dns
-  namespace: security-system
+  namespace: logging
 spec:
-  podSelector: {}
+  podSelector:
+    matchLabels:
+      app: vector
   policyTypes: [Egress]
   egress:
   - to:

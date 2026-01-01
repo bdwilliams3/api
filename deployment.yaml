@@ -8,124 +8,186 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: security-system
-  labels:
-    istio-injection: disabled
 ---
 # --- 2. SERVICE ACCOUNTS ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: k-api-sa
-  namespace: default
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: promtail-sa
+  name: vector-sa
   namespace: logging
 ---
-# --- 3. CONFIGURATIONS ---
+# --- 3. RBAC FOR VECTOR ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: vector-role
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "namespaces", "nodes"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vector-binding
+subjects:
+  - kind: ServiceAccount
+    name: vector-sa
+    namespace: logging
+roleRef:
+  kind: ClusterRole
+  name: vector-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# --- 4. CONFIGURATIONS ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: promtail-config
+  name: vector-config
   namespace: logging
 data:
-  promtail.yaml: |
-    server:
-      http_listen_port: 9080
-    positions:
-      filename: /tmp/positions.yaml
-    clients:
-      - url: http://loki-stack.logging.svc.cluster.local:3100/loki/api/v1/push
-    scrape_configs:
-    - job_name: kubernetes-pods
-      kubernetes_sd_configs:
-      - role: pod
-      relabel_configs:
-      - source_labels: [__meta_kubernetes_namespace]
-        target_label: namespace
-      - source_labels: [__meta_kubernetes_pod_name]
-        target_label: pod
-      - source_labels: [__meta_kubernetes_pod_container_name]
-        target_label: container
+  vector.yaml: |
+    sources:
+      kubernetes_logs:
+        type: kubernetes_logs
+
+    transforms:
+      remap_to_clickhouse:
+        type: remap
+        inputs: ["kubernetes_logs"]
+        source: |
+          .timestamp = format_timestamp!(.timestamp, format: "%Y-%m-%d %H:%M:%S")         
+          .pod_name = .kubernetes.pod_name
+          .namespace = .kubernetes.pod_namespace
+          .container_name = .kubernetes.container_name
+          .stream = .stream
+          .log = .message
+          del(.kubernetes)
+          del(.message)
+          del(.source_type)
+
+    sinks:
+      clickhouse_sink:
+        type: clickhouse
+        inputs: ["remap_to_clickhouse"]
+        endpoint: "http://clickhouse.logging.svc.cluster.local:8123"
+        database: "security"
+        table: "logs"
+        skip_unknown_fields: true
+      debug_print:
+        type: console
+        inputs: ["remap_to_clickhouse"]
+        encoding:
+          codec: json
 ---
-# --- 4. WORKLOADS ---
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: v1
+kind: ConfigMap
 metadata:
-  name: k-api
-  namespace: default
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: k-api
-  template:
-    metadata:
-      labels:
-        app: k-api
-    spec:
-      serviceAccountName: k-api-sa
-      containers:
-      - name: k-api
-        image: bdw_dev/k-api:hardened
-        imagePullPolicy: Never
-        ports:
-        - containerPort: 8080
+  name: clickhouse-schema-init
+  namespace: logging
+data:
+  init_db.sql: |
+    CREATE DATABASE IF NOT EXISTS security;
+    CREATE TABLE IF NOT EXISTS security.logs (
+        timestamp DateTime64(6),
+        log String,
+        container_name String,
+        pod_name String,
+        namespace String,
+        stream String
+    ) ENGINE = MergeTree 
+    ORDER BY (timestamp, namespace, pod_name);
 ---
+# --- 5. WORKLOADS ---
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
-  name: loki-stack
+  name: clickhouse
   namespace: logging
 spec:
+  serviceName: "clickhouse"
+  replicas: 1
   selector:
     matchLabels:
-      app: loki
+      app: clickhouse
   template:
     metadata:
       labels:
-        app: loki
+        app: clickhouse
     spec:
       containers:
-      - name: loki
-        image: grafana/loki:2.9.0
+      - name: clickhouse
+        image: clickhouse/clickhouse-server:23.8
         ports:
-        - containerPort: 3100
+        - containerPort: 8123
+          name: http
+        - containerPort: 9000
+          name: client
+        volumeMounts:
+        - name: clickhouse-data
+          mountPath: /var/lib/clickhouse
+        - name: init-scripts
+          mountPath: /docker-entrypoint-initdb.d/init_db.sql
+          subPath: init_db.sql
+      volumes:
+      - name: init-scripts
+        configMap:
+          name: clickhouse-schema-init
+  volumeClaimTemplates:
+  - metadata:
+      name: clickhouse-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 5Gi
 ---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: promtail
+  name: vector
   namespace: logging
 spec:
   selector:
     matchLabels:
-      app: promtail
+      app: vector
   template:
     metadata:
       labels:
-        app: promtail
+        app: vector
     spec:
-      serviceAccountName: promtail-sa
+      serviceAccountName: vector-sa
       containers:
-      - name: promtail
-        image: grafana/promtail:2.9.0
-        args: ["-config.file=/etc/promtail/promtail.yaml"]
-        securityContext:
-          runAsUser: 0
-          privileged: true 
-        volumeMounts:
-        - name: config
-          mountPath: /etc/promtail
-        - name: logs
-          mountPath: /var/log
-          readOnly: true
+      - name: vector
+        image: timberio/vector:0.34.0-distroless-libc
+        env:
+          - name: VECTOR_CONFIG
+            value: "/etc/vector/vector.yaml"
+          - name: VECTOR_SELF_NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
       volumes:
-      - name: config
-        configMap:
-          name: promtail-config
-      - name: logs
-        hostPath:
-          path: /var/log
+        - name: config
+          configMap:
+            name: vector-config
+        - name: var-log
+          hostPath:
+            path: /var/log/
+        - name: var-lib
+          hostPath:
+            path: /var/lib/vector/
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse
+  namespace: logging
+spec:
+  selector:
+    app: clickhouse
+  ports:
+  - name: http
+    port: 8123
+  - name: native
+    port: 9000
