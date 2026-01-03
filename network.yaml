@@ -35,3 +35,55 @@ spec:
     ports:
     - protocol: UDP
       port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: k-api-logging-bridge
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: k-api
+  policyTypes: [Egress]
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: logging
+    ports:
+    - protocol: TCP
+      port: 8123
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: api-route
+  namespace: default
+spec:
+  gateways:
+  - api-gateway
+  hosts:
+  - sample-api.com
+  http:
+  - route:
+    - destination:
+        host: k-api-service
+        port:
+          number: 8080
+---
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: api-gateway
+  namespace: default
+spec:
+  selector:
+    istio: ingressgateway # This tells Istio to use the standard ingress controller
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "sample-api.com"
