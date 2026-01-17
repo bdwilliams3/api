@@ -41,17 +41,6 @@ spec:
   podSelector: {}
   policyTypes: [Ingress, Egress]
 ---
-apiVersion: networking.istio.io/v1alpha3
-kind: DestinationRule
-metadata:
-  name: clickhouse-mtls-disable
-  namespace: default
-spec:
-  host: "clickhouse.logging.svc.cluster.local"
-  trafficPolicy:
-    tls:
-      mode: DISABLE
----
 apiVersion: security.istio.io/v1beta1
 kind: AuthorizationPolicy
 metadata:

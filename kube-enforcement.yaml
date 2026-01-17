@@ -1,0 +1,79 @@
+apiVersion: security.kubearmor.com/v1
+kind: KubeArmorPolicy
+metadata:
+  name: k-api-block-shells
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: k-api
+  process:
+    matchPaths:
+    - path: /bin/sh
+    - path: /bin/bash
+    - path: /bin/dash
+  action: Audit
+---
+apiVersion: security.kubearmor.com/v1
+kind: KubeArmorPolicy
+metadata:
+  name: k-api-protect-sensitive
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: k-api
+  file:
+    matchPaths:
+    - path: /etc/shadow
+    - path: /etc/passwd
+    matchDirectories:
+    - dir: /var/run/secrets/kubernetes.io/serviceaccount/
+      recursive: true
+      readOnly: true
+  action: Audit
+---
+apiVersion: security.kubearmor.com/v1
+kind: KubeArmorPolicy
+metadata:
+  name: k-api-block-capabilities
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: k-api
+  capabilities:
+    matchCapabilities:
+    - capability: net_raw
+    - capability: sys_admin
+    - capability: sys_ptrace
+  action: Block
+---
+apiVersion: security.kubearmor.com/v1
+kind: KubeArmorPolicy
+metadata:
+  name: k-api-block-container-escape
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: k-api
+  file:
+    matchDirectories:
+    - dir: /proc/sys/
+      recursive: true
+      readOnly: true
+    - dir: /sys/
+      recursive: true
+      readOnly: true
+    - dir: /host/
+      recursive: true
+    matchPaths:
+    - path: /dev/kmsg
+  capabilities:
+    matchCapabilities:
+    - capability: sys_module
+    - capability: sys_boot
+    - capability: sys_chroot
+    - capability: dac_override
+  action: Block
