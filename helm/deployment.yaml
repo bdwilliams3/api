@@ -8,6 +8,89 @@ kind: Namespace
 metadata:
   name: security-system
 ---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cloudflare
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudflared-credentials
+  namespace: cloudflare
+type: Opaque
+stringData:
+  credentials.json: |
+    {
+      "AccountTag":"9af78b72d0d3c81fd061fd2ff0c10827",
+      "TunnelSecret":"MQuSJraDqvQMLHHFNYGiJkUzlUi8tCBdok0WHqjfrio=",
+      "TunnelID":"787914be-8d52-4e87-bbf8-0cd270e435f1",
+      "Endpoint":""
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudflared-config
+  namespace: cloudflare
+data:
+  config.yml: |
+    tunnel: 787914be-8d52-4e87-bbf8-0cd270e435f1
+    credentials-file: /etc/cloudflared/credentials.json
+    ingress:
+      - hostname: sample-api.com
+        service: http://istio-ingressgateway.istio-system.svc.cluster.local:80
+        originRequest:
+          httpHostHeader: sample-api.com
+      - service: http_status:404
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflared
+  namespace: cloudflare
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cloudflared
+  template:
+    metadata:
+      labels:
+        app: cloudflared
+    spec:
+      containers:
+      - name: cloudflared
+        image: cloudflare/cloudflared:latest
+        args:
+        - tunnel
+        - --config
+        - /etc/cloudflared/config.yml
+        - run
+        volumeMounts:
+        - name: config
+          mountPath: /etc/cloudflared/config.yml
+          subPath: config.yml
+          readOnly: true
+        - name: credentials
+          mountPath: /etc/cloudflared/credentials.json
+          subPath: credentials.json
+          readOnly: true
+        resources:
+          limits:
+            cpu: "100m"
+            memory: "128Mi"
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+      volumes:
+      - name: config
+        configMap:
+          name: cloudflared-config
+      - name: credentials
+        secret:
+          secretName: cloudflared-credentials
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
