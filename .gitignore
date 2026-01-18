@@ -18,5 +18,8 @@
 README.md
 README.markdown
 
+# Ignore Istio directory
+istio-1.28.2
+
 # Ensure .gitignore itself remains tracked
 !.gitignore
