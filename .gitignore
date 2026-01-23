@@ -11,6 +11,12 @@
 *.mdown
 *.mkd
 
+#ignore virtualenv
+*virtualenv
+*venv
+*.venv
+*.env
+
 # Ignore all graphviz files
 *.dot
 
