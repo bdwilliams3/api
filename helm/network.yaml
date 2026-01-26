@@ -1,7 +1,7 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: vector-to-clickhouse
+  name: allow-vector-to-loki
   namespace: logging
 spec:
   podSelector:
@@ -12,10 +12,10 @@ spec:
   - to:
     - podSelector:
         matchLabels:
-          app: clickhouse
+          app: loki
     ports:
     - protocol: TCP
-      port: 8123
+      port: 3100
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

@@ -193,7 +193,7 @@ data:
     sources:
       kubernetes_logs:
         type: kubernetes_logs
-        extra_namespace_label_selector: "kubernetes.io/metadata.name in (default, logging, kubearmor, istio-system)"
+        extra_namespace_label_selector: "kubernetes.io/metadata.name in (default, logging, security-system, istio-system, cloudflare)"
 
     transforms:
       remap_to_loki:
