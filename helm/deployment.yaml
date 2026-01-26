@@ -193,17 +193,14 @@ data:
     sources:
       kubernetes_logs:
         type: kubernetes_logs
-        extra_namespace_label_selector: "kubernetes.io/metadata.name in (default, logging, security-system, istio-system, cloudflare)"
+        extra_field_selector: "metadata.namespace!=kube-system"
 
     transforms:
       remap_to_loki:
         type: remap
         inputs: ["kubernetes_logs"]
         source: |
-          allowed_containers = ["k-api", "kubearmor", "istio-proxy", "istio-ingressgateway", "vector", "loki", "grafana"]
-          if !includes(allowed_containers, .kubernetes.container_name) {
-            abort
-          }
+          allowed_containers = ["k-api", "kubearmor", "istio-proxy", "istio-ingressgateway", "vector", "loki", "grafana", "cloudflared"]
 
     sinks:
       loki_sink:
