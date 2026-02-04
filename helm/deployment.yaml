@@ -219,9 +219,6 @@ data:
         type: remap
         inputs: ["kubernetes_logs"]
         source: |
-          if .kubernetes.pod_namespace != "default" {
-            abort
-          }
           .splunk_sourcetype = "kubernetes:container:log"
           .splunk_index = "k8s_logs"
           .app = .kubernetes.container_name
@@ -233,8 +230,8 @@ data:
       splunk_hec:
         type: splunk_hec_logs
         inputs: ["remap_to_splunk"]
-        endpoint: "https://172.18.0.1:8088/services/collector"
-        default_token: "7b0650fa-0b39-48cb-951d-579f37721e38"
+        endpoint: "${SPLUNK_ENDPOINT}"
+        default_token: "${SPLUNK_HEC_TOKEN}"
         encoding:
           codec: json
         sourcetype: "{{ splunk_sourcetype }}"
@@ -242,6 +239,8 @@ data:
         tls:
           verify_certificate: false
           verify_hostname: false
+        healthcheck:
+          enabled: false
 ---
 apiVersion: apps/v1
 kind: DaemonSet
