@@ -3,11 +3,19 @@ import secrets
 import jwt
 import hmac
 import time
+import logging
 from flask import Flask, jsonify, request, make_response
 from datetime import datetime, timedelta
 from functools import wraps
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
@@ -29,6 +37,15 @@ limiter = Limiter(
 def get_terminal_banner(level_num, custom_text):
     border = "-" * 150
     return f"{border}\nLevel {level_num}\n{border}\n{' ' * 26}< {custom_text:^90} >\n{border}\n"
+
+@app.before_request
+def log_request():
+    logger.info(f"Request: {request.method} {request.path} | IP: {get_remote_address()} | Headers: {dict(request.headers)}")
+
+@app.after_request
+def log_response(response):
+    logger.info(f"Response: {request.method} {request.path} | Status: {response.status_code} | IP: {get_remote_address()}")
+    return response
 
 @app.after_request
 def security_headers(response):
