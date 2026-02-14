@@ -155,153 +155,456 @@ spec:
     targetPort: 8080
 ---
 apiVersion: v1
-kind: ServiceAccount
+kind: ConfigMap
 metadata:
-  name: vector-sa
+  name: otel-collector-config
   namespace: logging
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    
+    processors:
+      batch:
+        timeout: 10s
+        send_batch_size: 1024
+    
+    eexporters:
+      otlp/tempo:
+        endpoint: tempo.logging.svc.cluster.local:4317
+        tls:
+          insecure: true
+      
+      loki:
+        endpoint: http://loki.logging.svc.cluster.local:3100/loki/api/v1/push
+        default_labels_enabled:
+          exporter: false
+          job: true
+    
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [otlp/tempo]
+        logs:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [loki]
 ---
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+apiVersion: apps/v1
+kind: Deployment
 metadata:
-  name: vector-role
-rules:
-  - apiGroups: [""]
-    resources: ["pods", "namespaces", "nodes"]
-    verbs: ["get", "list", "watch"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: vector-binding
-subjects:
-  - kind: ServiceAccount
-    name: vector-sa
-    namespace: logging
-roleRef:
-  kind: ClusterRole
-  name: vector-role
-  apiGroup: rbac.authorization.k8s.io
+  name: otel-collector
+  namespace: logging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+    spec:
+      containers:
+      - name: otel-collector
+        image: otel/opentelemetry-collector-contrib:0.91.0
+        args:
+        - --config=/etc/otel/config.yaml
+        ports:
+        - containerPort: 4317
+          name: otlp-grpc
+          protocol: TCP
+        - containerPort: 4318
+          name: otlp-http
+          protocol: TCP
+        resources:
+          limits:
+            cpu: 200m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        volumeMounts:
+        - name: config
+          mountPath: /etc/otel
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: otel-collector-config
 ---
 apiVersion: v1
-kind: Secret
+kind: Service
 metadata:
-  name: splunk-hec-secret
+  name: otel-collector
   namespace: logging
-type: Opaque
-stringData:
-  token: "${SPLUNK_HEC_TOKEN}"
+spec:
+  selector:
+    app: otel-collector
+  ports:
+  - name: otlp-grpc
+    port: 4317
+    targetPort: 4317
+    protocol: TCP
+  - name: otlp-http
+    port: 4318
+    targetPort: 4318
+    protocol: TCP
+  type: ClusterIP
 ---
 apiVersion: v1
-kind: Secret
+kind: PersistentVolumeClaim
 metadata:
-  name: splunk-hec-secret
+  name: loki-pvc
   namespace: logging
-type: Opaque
-stringData:
-  token: "${SPLUNK_HEC_TOKEN}"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: vector-config
+  name: loki-config
   namespace: logging
 data:
-  vector.yaml: |
-    data_dir: /var/lib/vector
+  config.yaml: |
+    auth_enabled: false
     
-    sources:
-      kubernetes_logs:
-        type: kubernetes_logs
-        extra_field_selector: "metadata.namespace!=kube-system"
-
-    transforms:
-      remap_to_splunk:
-        type: remap
-        inputs: ["kubernetes_logs"]
-        source: |
-          if match!(.message, r'/health') {
-            abort
-          }
-          .splunk_sourcetype = "kubernetes:container:log"
-          .splunk_index = "k8s_logs"
-          .app = .kubernetes.container_name
-          .namespace = .kubernetes.pod_namespace
-          .pod = .kubernetes.pod_name
-          .node = .kubernetes.pod_node_name
-
-    sinks:
-      splunk_hec:
-        type: splunk_hec_logs
-        inputs: ["remap_to_splunk"]
-        endpoint: "${SPLUNK_ENDPOINT}"
-        default_token: "${SPLUNK_HEC_TOKEN}"
-        encoding:
-          codec: json
-        sourcetype: "{{ splunk_sourcetype }}"
-        index: "{{ splunk_index }}"
-        tls:
-          verify_certificate: false
-          verify_hostname: false
-        healthcheck:
-          enabled: false
+    server:
+      http_listen_port: 3100
+      grpc_listen_port: 9096
+    
+    common:
+      path_prefix: /loki
+      storage:
+        filesystem:
+          chunks_directory: /loki/chunks
+          rules_directory: /loki/rules
+      replication_factor: 1
+      ring:
+        kvstore:
+          store: inmemory
+    
+    schema_config:
+      configs:
+        - from: 2020-10-24
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index:
+            prefix: index_
+            period: 24h
+    
+    limits_config:
+      retention_period: 168h
 ---
 apiVersion: apps/v1
-kind: DaemonSet
+kind: Deployment
 metadata:
-  name: vector
+  name: loki
   namespace: logging
 spec:
+  replicas: 1
   selector:
     matchLabels:
-      app: vector
+      app: loki
   template:
     metadata:
       labels:
-        app: vector
+        app: loki
     spec:
-      serviceAccountName: vector-sa
       containers:
-      - name: vector
-        image: timberio/vector:0.34.0-distroless-libc
+      - name: loki
+        image: grafana/loki:2.9.3
+        args:
+        - -config.file=/etc/loki/config.yaml
+        ports:
+        - containerPort: 3100
+          name: http
+          protocol: TCP
+        - containerPort: 9096
+          name: grpc
+          protocol: TCP
         resources:
           limits:
             cpu: 300m
             memory: 512Mi
           requests:
             cpu: 100m
-            memory: 128Mi
-        env:
-          - name: VECTOR_CONFIG
-            value: "/etc/vector/vector.yaml"
-          - name: VECTOR_SELF_NODE_NAME
-            valueFrom:
-              fieldRef:
-                fieldPath: spec.nodeName
-          - name: SPLUNK_ENDPOINT
-            value: "${SPLUNK_ENDPOINT}"
-          - name: SPLUNK_HEC_TOKEN
-            valueFrom:
-              secretKeyRef:
-                name: splunk-hec-secret
-                key: token
+            memory: 256Mi
         volumeMounts:
         - name: config
-          mountPath: /etc/vector/vector.yaml
-          subPath: vector.yaml
+          mountPath: /etc/loki
           readOnly: true
-        - name: var-log
-          mountPath: /var/log/
-          readOnly: true
-        - name: var-lib
-          mountPath: /var/lib/vector/
+        - name: storage
+          mountPath: /loki
       volumes:
+      - name: config
+        configMap:
+          name: loki-config
+      - name: storage
+        persistentVolumeClaim:
+          claimName: loki-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: loki
+  namespace: logging
+spec:
+  selector:
+    app: loki
+  ports:
+  - name: http
+    port: 3100
+    targetPort: 3100
+    protocol: TCP
+  - name: grpc
+    port: 9096
+    targetPort: 9096
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tempo-pvc
+  namespace: logging
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tempo-config
+  namespace: logging
+data:
+  config.yaml: |
+    server:
+      http_listen_port: 3200
+      grpc_listen_port: 9096
+    
+    distributor:
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: 0.0.0.0:4317
+            http:
+              endpoint: 0.0.0.0:4318
+    
+    ingester:
+      max_block_duration: 5m
+    
+    compactor:
+      compaction:
+        block_retention: 168h
+    
+    storage:
+      trace:
+        backend: local
+        local:
+          path: /var/tempo/traces
+        wal:
+          path: /var/tempo/wal
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tempo
+  namespace: logging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tempo
+  template:
+    metadata:
+      labels:
+        app: tempo
+    spec:
+      containers:
+      - name: tempo
+        image: grafana/tempo:2.3.1
+        args:
+        - -config.file=/etc/tempo/config.yaml
+        ports:
+        - containerPort: 3200
+          name: http
+          protocol: TCP
+        - containerPort: 4317
+          name: otlp-grpc
+          protocol: TCP
+        - containerPort: 4318
+          name: otlp-http
+          protocol: TCP
+        - containerPort: 9096
+          name: grpc
+          protocol: TCP
+        resources:
+          limits:
+            cpu: 300m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+        volumeMounts:
         - name: config
-          configMap:
-            name: vector-config
-        - name: var-log
-          hostPath:
-            path: /var/log/
-        - name: var-lib
-          hostPath:
-            path: /var/lib/vector/
-            type: DirectoryOrCreate
+          mountPath: /etc/tempo
+          readOnly: true
+        - name: storage
+          mountPath: /var/tempo
+      volumes:
+      - name: config
+        configMap:
+          name: tempo-config
+      - name: storage
+        persistentVolumeClaim:
+          claimName: tempo-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tempo
+  namespace: logging
+spec:
+  selector:
+    app: tempo
+  ports:
+  - name: http
+    port: 3200
+    targetPort: 3200
+    protocol: TCP
+  - name: otlp-grpc
+    port: 4317
+    targetPort: 4317
+    protocol: TCP
+  - name: otlp-http
+    port: 4318
+    targetPort: 4318
+    protocol: TCP
+  - name: grpc
+    port: 9096
+    targetPort: 9096
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: logging
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    
+    processors:
+      batch:
+        timeout: 10s
+        send_batch_size: 1024
+    
+    exporters:
+      otlp/tempo:
+        endpoint: tempo.logging.svc.cluster.local:4317
+        tls:
+          insecure: true
+      
+      loki:
+        endpoint: http://loki.logging.svc.cluster.local:3100/loki/api/v1/push
+        labels:
+          attributes:
+            app: "app"
+            namespace: "namespace"
+    
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [otlp/tempo]
+        logs:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [loki]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: logging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+    spec:
+      containers:
+      - name: otel-collector
+        image: otel/opentelemetry-collector-contrib:0.91.0
+        args:
+        - --config=/etc/otel/config.yaml
+        ports:
+        - containerPort: 4317
+          name: otlp-grpc
+          protocol: TCP
+        - containerPort: 4318
+          name: otlp-http
+          protocol: TCP
+        resources:
+          limits:
+            cpu: 200m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        volumeMounts:
+        - name: config
+          mountPath: /etc/otel
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: otel-collector-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: logging
+spec:
+  selector:
+    app: otel-collector
+  ports:
+  - name: otlp-grpc
+    port: 4317
+    targetPort: 4317
+    protocol: TCP
+  - name: otlp-http
+    port: 4318
+    targetPort: 4318
+    protocol: TCP
+  type: ClusterIP

@@ -1,44 +1,6 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-vector-to-loki
-  namespace: logging
-spec:
-  podSelector:
-    matchLabels:
-      app: vector
-  policyTypes: [Egress]
-  egress:
-  - to:
-    - podSelector:
-        matchLabels:
-          app: loki
-    ports:
-    - protocol: TCP
-      port: 3100
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-system-dns
-  namespace: logging
-spec:
-  podSelector:
-    matchLabels:
-      app: vector
-  policyTypes: [Egress]
-  egress:
-  - to:
-    - namespaceSelector:
-        matchLabels:
-          kubernetes.io/metadata.name: kube-system
-    ports:
-    - protocol: UDP
-      port: 53
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
   name: k-api-logging-bridge
   namespace: default
 spec:
@@ -79,7 +41,7 @@ metadata:
   namespace: default
 spec:
   selector:
-    istio: ingressgateway # This tells Istio to use the standard ingress controller
+    istio: ingressgateway
   servers:
   - port:
       number: 80
@@ -130,10 +92,143 @@ spec:
   - from:
     - podSelector:
         matchLabels:
-          app: vector
+          app: grafana
+    ports:
+    - protocol: TCP
+      port: 3100
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: otel-collector-ingress
+  namespace: logging
+spec:
+  podSelector:
+    matchLabels:
+      app: otel-collector
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: default
+      podSelector:
+        matchLabels:
+          app: k-api
+    ports:
+    - protocol: TCP
+      port: 4317
+    - protocol: TCP
+      port: 4318
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: otel-collector-egress
+  namespace: logging
+spec:
+  podSelector:
+    matchLabels:
+      app: otel-collector
+  policyTypes: [Egress]
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: tempo
+    ports:
+    - protocol: TCP
+      port: 4317
+  - to:
+    - podSelector:
+        matchLabels:
+          app: loki
+    ports:
+    - protocol: TCP
+      port: 3100
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: loki-ingress
+  namespace: logging
+spec:
+  podSelector:
+    matchLabels:
+      app: loki
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: otel-collector
     - podSelector:
         matchLabels:
           app: grafana
     ports:
     - protocol: TCP
       port: 3100
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tempo-ingress
+  namespace: logging
+spec:
+  podSelector:
+    matchLabels:
+      app: tempo
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: otel-collector
+    - podSelector:
+        matchLabels:
+          app: grafana
+    ports:
+    - protocol: TCP
+      port: 4317
+    - protocol: TCP
+      port: 3200
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: grafana-egress
+  namespace: logging
+spec:
+  podSelector:
+    matchLabels:
+      app: grafana
+  policyTypes: [Egress]
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: loki
+    ports:
+    - protocol: TCP
+      port: 3100
+  - to:
+    - podSelector:
+        matchLabels:
+          app: tempo
+    ports:
+    - protocol: TCP
+      port: 3200
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
