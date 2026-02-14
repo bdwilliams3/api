@@ -219,6 +219,9 @@ data:
         type: remap
         inputs: ["kubernetes_logs"]
         source: |
+          if match!(.message, r'/health') {
+            abort
+          }
           .splunk_sourcetype = "kubernetes:container:log"
           .splunk_index = "k8s_logs"
           .app = .kubernetes.container_name
