@@ -122,6 +122,9 @@ spec:
       - name: k-api
         image: bdw_dev/k-api:hardened
         imagePullPolicy: IfNotPresent
+        env:
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "otel-collector.logging.svc.cluster.local:4317"
         ports:
         - containerPort: 8080
         resources:
@@ -153,111 +156,6 @@ spec:
     protocol: TCP
     port: 8080
     targetPort: 8080
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: otel-collector-config
-  namespace: logging
-data:
-  config.yaml: |
-    receivers:
-      otlp:
-        protocols:
-          grpc:
-            endpoint: 0.0.0.0:4317
-          http:
-            endpoint: 0.0.0.0:4318
-    
-    processors:
-      batch:
-        timeout: 10s
-        send_batch_size: 1024
-    
-    eexporters:
-      otlp/tempo:
-        endpoint: tempo.logging.svc.cluster.local:4317
-        tls:
-          insecure: true
-      
-      loki:
-        endpoint: http://loki.logging.svc.cluster.local:3100/loki/api/v1/push
-        default_labels_enabled:
-          exporter: false
-          job: true
-    
-    service:
-      pipelines:
-        traces:
-          receivers: [otlp]
-          processors: [batch]
-          exporters: [otlp/tempo]
-        logs:
-          receivers: [otlp]
-          processors: [batch]
-          exporters: [loki]
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: otel-collector
-  namespace: logging
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: otel-collector
-  template:
-    metadata:
-      labels:
-        app: otel-collector
-    spec:
-      containers:
-      - name: otel-collector
-        image: otel/opentelemetry-collector-contrib:0.91.0
-        args:
-        - --config=/etc/otel/config.yaml
-        ports:
-        - containerPort: 4317
-          name: otlp-grpc
-          protocol: TCP
-        - containerPort: 4318
-          name: otlp-http
-          protocol: TCP
-        resources:
-          limits:
-            cpu: 200m
-            memory: 256Mi
-          requests:
-            cpu: 100m
-            memory: 128Mi
-        volumeMounts:
-        - name: config
-          mountPath: /etc/otel
-          readOnly: true
-      volumes:
-      - name: config
-        configMap:
-          name: otel-collector-config
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: otel-collector
-  namespace: logging
-spec:
-  selector:
-    app: otel-collector
-  ports:
-  - name: otlp-grpc
-    port: 4317
-    targetPort: 4317
-    protocol: TCP
-  - name: otlp-http
-    port: 4318
-    targetPort: 4318
-    protocol: TCP
-  type: ClusterIP
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -306,7 +204,7 @@ data:
             period: 24h
     
     limits_config:
-      retention_period: 168h
+      retention_period: 1h
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -531,10 +429,6 @@ data:
       
       loki:
         endpoint: http://loki.logging.svc.cluster.local:3100/loki/api/v1/push
-        labels:
-          attributes:
-            app: "app"
-            namespace: "namespace"
     
     service:
       pipelines:
