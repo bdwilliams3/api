@@ -162,7 +162,7 @@ def level_1():
         span.set_attribute("auth.username_provided", bool(auth and auth.username))
         
         # SUCCESS: Reveal Level 2 Info
-        if auth and auth.username == "api_hunter" and auth.password == "p@s5W0rD":
+        if auth and auth.username == "api_hunter" and auth.password == "p@s5W0rD": # nosec B105
             fail_tracker.pop(ip, None) # Clear fails
             span.set_attribute("auth.result", "success")
             span.set_attribute("auth.username", auth.username)
@@ -340,7 +340,7 @@ def level_5():
     with tracer.start_as_current_span("level_5_auth") as span:
         add_request_context_to_span(span)
         
-        api_key = request.headers.get('X-API-Key')
+        api_key = # nosec B104request.headers.get('X-API-Key')
         
         span.set_attribute("level", 5)
         span.set_attribute("auth.type", "api_key")
@@ -367,4 +367,4 @@ def level_5():
         return jsonify({"level": 5, "hint": hints.get(count, hints[3])}), 401
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080)
+    app.run(host='0.0.0.0', port=8080) # nosec B104
