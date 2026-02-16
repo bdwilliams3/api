@@ -1,5 +1,5 @@
 # Stage 1: The Builder (Debian 11 to match Distroless)
-FROM python:3.9-slim-bullseye AS builder
+FROM python:3.12-slim-bookworm AS builder
 
 WORKDIR /app
 COPY requirements.txt .
@@ -10,7 +10,7 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 COPY . .
 
 # Stage 2: The Final Distroless Image
-FROM gcr.io/distroless/python3-debian11:nonroot
+FROM gcr.io/distroless/python3-debian12:nonroot
 WORKDIR /app
 
 # Copy libraries to /usr/local (standard Python path)
