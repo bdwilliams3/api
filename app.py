@@ -185,7 +185,7 @@ def level_1():
         hints = {
             1: "Did you check the headers in Level 0? Look for 'X-Secret'.",
             2: "Level 1 uses Basic Auth. Use 'curl -u username:password'.",
-            3: "The username is 'api_hunter' and the password is 'p@s5W0rD'."
+            3: "The username is 'api_hunter' and the password is 'p@s5W0rD'." # nosec B105
         }
         res = make_response(jsonify({"hint": hints.get(count, hints[3])}), 401)
         res.headers['WWW-Authenticate'] = 'Basic realm="Level 1"'
