@@ -362,7 +362,7 @@ def level_5():
         hints = {
             1: "Final gate requires an 'X-API-Key'.",
             2: "The key is the first 16 chars of the Level 4 signature.",
-            3: "Find the signature from Level 4 success and use it as X-API-Key."
+            3: "Find the signature from Level 4 success and use it as X-API-Key..."
         }
         return jsonify({"level": 5, "hint": hints.get(count, hints[3])}), 401
 
