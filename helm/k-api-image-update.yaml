@@ -13,7 +13,7 @@ spec:
       author:
         email: flux@bdwilliams3
         name: flux
-      messageTemplate: update image to {{range .Updated.Images}}{{println .}}{{end}}
+      messageTemplate: update image to {{range .Changed.Changes}}{{println .}}{{end}}
     push:
       branch: master
   interval: 1m0s
