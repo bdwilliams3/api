@@ -14,21 +14,6 @@ metadata:
   name: cloudflare
 ---
 apiVersion: v1
-kind: Secret
-metadata:
-  name: cloudflared-credentials
-  namespace: cloudflare
-type: Opaque
-stringData:
-  credentials.json: |
-    {
-      "AccountTag":"${CLOUDFLARE_ACCOUNT_TAG}",
-      "TunnelSecret":"${CLOUDFLARE_TUNNEL_SECRET}",
-      "TunnelID":"${CLOUDFLARE_TUNNEL_ID}",
-      "Endpoint":""
-    }
----
-apiVersion: v1
 kind: ConfigMap
 metadata:
   name: cloudflared-config
