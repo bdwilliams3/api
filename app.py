@@ -5,6 +5,7 @@ import hmac
 import time
 import logging
 import os
+import requests
 from flask import Flask, jsonify, request, make_response
 from datetime import datetime, timedelta
 from functools import wraps
