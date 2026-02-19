@@ -105,7 +105,7 @@ spec:
       automountServiceAccountToken: false
       containers:
       - name: k-api
-        image: ghcr.io/bdwilliams3/k-api:latest # {"$imagepolicy": "flux-system:k-api"}
+        image: ghcr.io/bdwilliams3/k-api:master-ec28c86 # {"$imagepolicy": "flux-system:k-api"}
         imagePullPolicy: IfNotPresent
         env:
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
@@ -162,11 +162,11 @@ metadata:
 data:
   config.yaml: |
     auth_enabled: false
-    
+
     server:
       http_listen_port: 3100
       grpc_listen_port: 9096
-    
+
     common:
       path_prefix: /loki
       storage:
@@ -177,7 +177,7 @@ data:
       ring:
         kvstore:
           store: inmemory
-    
+
     schema_config:
       configs:
         - from: 2020-10-24
@@ -187,7 +187,7 @@ data:
           index:
             prefix: index_
             period: 24h
-    
+
     limits_config:
       retention_period: 1h
 ---
@@ -280,7 +280,7 @@ data:
     server:
       http_listen_port: 3200
       grpc_listen_port: 9096
-    
+
     distributor:
       receivers:
         otlp:
@@ -289,14 +289,14 @@ data:
               endpoint: 0.0.0.0:4317
             http:
               endpoint: 0.0.0.0:4318
-    
+
     ingester:
       max_block_duration: 5m
-    
+
     compactor:
       compaction:
         block_retention: 168h
-    
+
     storage:
       trace:
         backend: local
@@ -392,39 +392,7 @@ metadata:
   name: otel-collector-config
   namespace: logging
 data:
-  config.yaml: |
-    receivers:
-      otlp:
-        protocols:
-          grpc:
-            endpoint: 0.0.0.0:4317
-          http:
-            endpoint: 0.0.0.0:4318
-    
-    processors:
-      batch:
-        timeout: 10s
-        send_batch_size: 1024
-    
-    exporters:
-      otlp/tempo:
-        endpoint: tempo.logging.svc.cluster.local:4317
-        tls:
-          insecure: true
-      
-      loki:
-        endpoint: http://loki.logging.svc.cluster.local:3100/loki/api/v1/push
-    
-    service:
-      pipelines:
-        traces:
-          receivers: [otlp]
-          processors: [batch]
-          exporters: [otlp/tempo]
-        logs:
-          receivers: [otlp]
-          processors: [batch]
-          exporters: [loki]
+  config.yaml: "receivers:\n  otlp:\n    protocols:\n      grpc:\n        endpoint: 0.0.0.0:4317\n      http:\n        endpoint: 0.0.0.0:4318\n\nprocessors:\n  batch:\n    timeout: 10s\n    send_batch_size: 1024\n\nexporters:\n  otlp/tempo:\n    endpoint: tempo.logging.svc.cluster.local:4317\n    tls:\n      insecure: true\n  \n  loki:\n    endpoint: http://loki.logging.svc.cluster.local:3100/loki/api/v1/push\n\nservice:\n  pipelines:\n    traces:\n      receivers: [otlp]\n      processors: [batch]\n      exporters: [otlp/tempo]\n    logs:\n      receivers: [otlp]\n      processors: [batch]\n      exporters: [loki]\n"
 ---
 apiVersion: apps/v1
 kind: Deployment
