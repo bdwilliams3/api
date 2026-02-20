@@ -340,7 +340,7 @@ def level_5():
     with tracer.start_as_current_span("level_5_auth") as span:
         add_request_context_to_span(span)
         
-        api_key = # nosec B104request.headers.get('X-API-Key')
+        api_key = request.headers.get('X-API-Key') # nosec B104request.headers.get('X-API-Key')
         
         span.set_attribute("level", 5)
         span.set_attribute("auth.type", "api_key")
