@@ -292,9 +292,9 @@ def level_3():
         }
         return jsonify({"hint": hints.get(count, hints[3])}), 401
 
-# ==========================================
+# ===========================================
 # LEVEL 4: HMAC SIGNING
-# ==========================================
+# ===========================================
 @app.route('/api/level/4', methods=['GET'])
 def level_4():
     with tracer.start_as_current_span("level_4_auth") as span:
