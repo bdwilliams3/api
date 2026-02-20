@@ -105,7 +105,7 @@ spec:
       automountServiceAccountToken: false
       containers:
       - name: k-api
-        image: ghcr.io/bdwilliams3/k-api:master-ec28c86 # {"$imagepolicy": "flux-system:k-api"}
+        image: ghcr.io/bdwilliams3/k-api:master-0c69f61 # {"$imagepolicy": "flux-system:k-api"}
         imagePullPolicy: IfNotPresent
         env:
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
