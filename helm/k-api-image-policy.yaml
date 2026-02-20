@@ -6,10 +6,10 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    extract: ""
-    pattern: ^master-[0-9]+-.*
+    extract: $ts
+    pattern: ^master-(?P<ts>[0-9]+)-.*
   imageRepositoryRef:
     name: k-api
   policy:
-    alphabetical:
+    numerical:
       order: desc
