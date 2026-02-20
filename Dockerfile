@@ -2,8 +2,7 @@
 FROM python:3.12-slim-bookworm AS builder
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir --prefix=/install --only-binary=:all: -r requirements.txt && \
-    cp /usr/lib/x86_64-linux-gnu/libstdc++.so.6 /install/lib/
+RUN pip install --no-cache-dir --prefix=/install --only-binary=:all: -r requirements.txt
 COPY . .
 
 # Stage 2: Distroless runtime - no shell, runs as nonroot uid 65532
@@ -13,6 +12,7 @@ WORKDIR /app
 # Copy installed packages and app code from builder
 COPY --from=builder /install /usr/local
 COPY --from=builder /app /app
+COPY --from=builder /usr/lib/x86_64-linux-gnu/libstdc++.so.6 /usr/lib/x86_64-linux-gnu/libstdc++.so.6
 
 # Point Python to the installed packages
 ENV PYTHONPATH="/usr/local/lib/python3.12/site-packages:/app"
