@@ -235,9 +235,9 @@ def level_2():
         }
         return jsonify({"hint": hints.get(count, hints[3])}), 401
 
-# ==========================================
+# ===========================================
 # LEVEL 3: JWT (STAKEHOLDER IDENTITY)
-# ==========================================
+# ===========================================
 @app.route('/api/level/3', methods=['GET'])
 def level_3():
     with tracer.start_as_current_span("level_3_auth") as span:
