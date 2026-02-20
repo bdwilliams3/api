@@ -191,9 +191,9 @@ def level_1():
         res.headers['WWW-Authenticate'] = 'Basic realm="Level 1"'
         return res
 
-# ==========================================
+# ===========================================
 # LEVEL 2: BEARER TOKEN
-# ==========================================
+# ===========================================
 @app.route('/api/level/2', methods=['GET'])
 def level_2():
     with tracer.start_as_current_span("level_2_auth") as span:
