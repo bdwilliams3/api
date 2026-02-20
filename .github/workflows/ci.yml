@@ -81,3 +81,10 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+      - name: Delete old image tags
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: k-api
+          package-type: container
+          min-versions-to-keep: 3
+          token: ${{ secrets.CR_TOKEN }}
