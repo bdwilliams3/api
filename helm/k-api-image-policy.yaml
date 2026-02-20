@@ -7,7 +7,7 @@ metadata:
 spec:
   filterTags:
     extract: $ts
-    pattern: ^master-(?P<ts>[0-9]+)-.*
+    pattern: ^master-(?P<ts>[0-9]{10})-.*
   imageRepositoryRef:
     name: k-api
   policy:

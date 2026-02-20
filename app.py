@@ -332,9 +332,9 @@ def level_4():
         }
         return jsonify({"level": 4, "hint": hints.get(count, hints[3])}), 401
 
-# ==========================================
+# =========================================
 # LEVEL 5: API KEY & VICTORY
-# ==========================================
+# =========================================
 @app.route('/api/level/5', methods=['GET'])
 def level_5():
     with tracer.start_as_current_span("level_5_auth") as span:
