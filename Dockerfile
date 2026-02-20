@@ -2,7 +2,7 @@
 FROM python:3.12-slim-bookworm AS builder
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+RUN pip install --no-cache-dir --prefix=/install --only-binary=:all: -r requirements.txt
 COPY . .
 
 # Stage 2: Distroless runtime - no shell, runs as nonroot uid 65532
