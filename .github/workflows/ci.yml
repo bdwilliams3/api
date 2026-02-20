@@ -54,7 +54,6 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=sha,prefix=master-
             type=raw,value=master-{{date 'X'}}-{{sha}}
             type=raw,value=latest
 
