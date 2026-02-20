@@ -7,7 +7,7 @@ metadata:
 spec:
   filterTags:
     extract: ""
-    pattern: ^master-[0-9]+.*
+    pattern: ^master-[0-9]+-.*
   imageRepositoryRef:
     name: k-api
   policy:
