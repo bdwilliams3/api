@@ -30,7 +30,7 @@ var (
 )
 
 func init() {
-	// Restoring INTERNAL_SEED logic
+	// Replicating INTERNAL_SEED = secrets.token_hex(64) from app.py
 	seedBytes := make([]byte, 64)
 	if _, err := rand.Read(seedBytes); err != nil {
 		panic(err)
@@ -43,6 +43,7 @@ func init() {
 }
 
 func deriveKey(purpose string) string {
+	// Replicating hashlib.sha256(f"{INTERNAL_SEED}-{purpose}".encode())
 	h := sha256.New()
 	h.Write([]byte(fmt.Sprintf("%s-%s", internalSeed, purpose)))
 	return hex.EncodeToString(h.Sum(nil))
@@ -59,7 +60,7 @@ func initTracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
 		return nil, err
 	}
 
-	// Restoring exact Resource attributes
+	// Replicating Resource from app.py
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(exporter),
 		sdktrace.WithResource(resource.NewWithAttributes(
@@ -83,7 +84,7 @@ func main() {
 	r := gin.New()
 	r.Use(gin.Recovery())
 
-	// Liveness/Readiness Probe
+	// Replicating /health for probes
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "healthy"})
 	})
@@ -96,36 +97,36 @@ func main() {
 			c.AbortWithStatus(401)
 			return
 		}
-		c.JSON(200, gin.H{"status": "success", "next_level": "/api/level/2"})
+		c.JSON(http.StatusOK, gin.H{"status": "success", "next_level": "/api/level/2"})
 	})
 
 	// Level 2: API Key Validation
 	r.GET("/api/level/2", func(c *gin.Context) {
 		if c.GetHeader("X-API-Key") != "hunter_v1" {
-			c.AbortWithStatusJSON(403, gin.H{"error": "Invalid API Key"})
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Invalid API Key"})
 			return
 		}
-		c.JSON(200, gin.H{"status": "success", "next_level": "/api/level/3"})
+		c.JSON(http.StatusOK, gin.H{"status": "success", "next_level": "/api/level/3"})
 	})
 
 	// Level 3: Identity Token Validation
 	r.GET("/api/level/3", func(c *gin.Context) {
 		if c.GetHeader("X-Identity-Token") != "discovery_agent" {
-			c.AbortWithStatusJSON(403, gin.H{"error": "Invalid Identity Token"})
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Invalid Identity Token"})
 			return
 		}
-		c.JSON(200, gin.H{"status": "success", "next_level": "/api/level/4"})
+		c.JSON(http.StatusOK, gin.H{"status": "success", "next_level": "/api/level/4"})
 	})
 
-	// Level 4: Key Derivation/Signature
+	// Level 4: Signature Verification
 	r.GET("/api/level/4", func(c *gin.Context) {
 		id := c.GetHeader("X-Identity-Token")
 		sig := c.GetHeader("X-Signature")
 		if id == "" || sig != deriveKey(id) {
-			c.AbortWithStatusJSON(403, gin.H{"error": "Signature mismatch"})
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Signature mismatch"})
 			return
 		}
-		c.JSON(200, gin.H{"status": "success", "next_level": "/api/level/5"})
+		c.JSON(http.StatusOK, gin.H{"status": "success", "next_level": "/api/level/5"})
 	})
 
 	// Level 5: Login for JWT
@@ -134,31 +135,31 @@ func main() {
 			"exp": time.Now().Add(time.Hour).Unix(),
 		})
 		tString, _ := token.SignedString(jwtSecret)
-		c.JSON(200, gin.H{
-			"token": tString,
-			"internal_challenge": internalSeed, // Required for Level 4 spidering
+		c.JSON(http.StatusOK, gin.H{
+			"token":              tString,
+			"internal_challenge": internalSeed,
 		})
 	})
 
-	// Authenticated Production API
+	// Authenticated API
 	api := r.Group("/api/v1")
 	api.Use(func(c *gin.Context) {
 		auth := c.GetHeader("Authorization")
 		if !strings.HasPrefix(auth, "Bearer ") {
-			c.AbortWithStatus(401)
+			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
 		tokenStr := strings.TrimPrefix(auth, "Bearer ")
 		token, _ := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) { return jwtSecret, nil })
 		if token == nil || !token.Valid {
-			c.AbortWithStatus(401)
+			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
 		c.Next()
 	})
 	{
 		api.GET("/status", func(c *gin.Context) {
-			c.JSON(200, gin.H{"data": "Cluster Operational", "level": 5})
+			c.JSON(http.StatusOK, gin.H{"data": "Cluster Operational", "level": 5})
 		})
 	}
 
