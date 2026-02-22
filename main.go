@@ -1,7 +1,7 @@
 package main
 
 import (
-	"context" // Used in initTracer and main
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -29,6 +30,7 @@ var (
 )
 
 func init() {
+	// Restoring INTERNAL_SEED logic
 	seedBytes := make([]byte, 64)
 	if _, err := rand.Read(seedBytes); err != nil {
 		panic(err)
@@ -57,11 +59,14 @@ func initTracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
 		return nil, err
 	}
 
+	// Restoring exact Resource attributes
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(exporter),
 		sdktrace.WithResource(resource.NewWithAttributes(
 			semconv.SchemaURL,
 			semconv.ServiceNameKey.String("k-api"),
+			semconv.ServiceNamespaceKey.String("default"),
+			attribute.String("deployment.environment", "production"),
 		)),
 	)
 	otel.SetTracerProvider(tp)
@@ -69,91 +74,91 @@ func initTracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
 }
 
 func main() {
-	// Use context for tracer initialization
 	ctx := context.Background()
-	tp, err := initTracer(ctx)
-	if err == nil {
+	tp, _ := initTracer(ctx)
+	if tp != nil {
 		defer func() { _ = tp.Shutdown(ctx) }()
 	}
 
 	r := gin.New()
 	r.Use(gin.Recovery())
 
-	// --- THE 5 DISCOVERY LEVELS ---
+	// Liveness/Readiness Probe
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "healthy"})
+	})
 
-	// Level 1: Basic Auth
+	// Level 1: Basic Auth Discovery
 	r.GET("/api/level/1", func(c *gin.Context) {
 		user, pass, ok := c.Request.BasicAuth()
 		if !ok || user != "api_hunter" || pass != "p@s5W0rD" {
 			c.Header("WWW-Authenticate", `Basic realm="Restricted"`)
-			c.AbortWithStatus(http.StatusUnauthorized)
+			c.AbortWithStatus(401)
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"status": "success", "next_level": "/api/level/2"})
+		c.JSON(200, gin.H{"status": "success", "next_level": "/api/level/2"})
 	})
 
-	// Level 2: API Key
+	// Level 2: API Key Validation
 	r.GET("/api/level/2", func(c *gin.Context) {
 		if c.GetHeader("X-API-Key") != "hunter_v1" {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Missing X-API-Key"})
+			c.AbortWithStatusJSON(403, gin.H{"error": "Invalid API Key"})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"status": "success", "next_level": "/api/level/3"})
+		c.JSON(200, gin.H{"status": "success", "next_level": "/api/level/3"})
 	})
 
-	// Level 3: Identity Token
+	// Level 3: Identity Token Validation
 	r.GET("/api/level/3", func(c *gin.Context) {
 		if c.GetHeader("X-Identity-Token") != "discovery_agent" {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Invalid Identity"})
+			c.AbortWithStatusJSON(403, gin.H{"error": "Invalid Identity Token"})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"status": "success", "next_level": "/api/level/4"})
+		c.JSON(200, gin.H{"status": "success", "next_level": "/api/level/4"})
 	})
 
-	// Level 4: Signature (Security Best Practice: Key Derivation)
+	// Level 4: Key Derivation/Signature
 	r.GET("/api/level/4", func(c *gin.Context) {
 		id := c.GetHeader("X-Identity-Token")
 		sig := c.GetHeader("X-Signature")
 		if id == "" || sig != deriveKey(id) {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Signature mismatch"})
+			c.AbortWithStatusJSON(403, gin.H{"error": "Signature mismatch"})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"status": "success", "next_level": "/api/level/5"})
+		c.JSON(200, gin.H{"status": "success", "next_level": "/api/level/5"})
 	})
 
-	// Level 5: JWT Generation
+	// Level 5: Login for JWT
 	r.POST("/login", func(c *gin.Context) {
 		token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 			"exp": time.Now().Add(time.Hour).Unix(),
-			"iat": time.Now().Unix(),
 		})
 		tString, _ := token.SignedString(jwtSecret)
-		c.JSON(http.StatusOK, gin.H{
-			"token":              tString,
-			"internal_challenge": internalSeed,
-			"status":             "success",
+		c.JSON(200, gin.H{
+			"token": tString,
+			"internal_challenge": internalSeed, // Required for Level 4 spidering
 		})
 	})
 
-	// Final Authenticated API
+	// Authenticated Production API
 	api := r.Group("/api/v1")
 	api.Use(func(c *gin.Context) {
 		auth := c.GetHeader("Authorization")
 		if !strings.HasPrefix(auth, "Bearer ") {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			c.AbortWithStatus(401)
 			return
 		}
 		tokenStr := strings.TrimPrefix(auth, "Bearer ")
 		token, _ := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) { return jwtSecret, nil })
 		if token == nil || !token.Valid {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid Token"})
+			c.AbortWithStatus(401)
 			return
 		}
 		c.Next()
 	})
 	{
 		api.GET("/status", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"data": "Cluster Operational", "level": 5})
+			c.JSON(200, gin.H{"data": "Cluster Operational", "level": 5})
 		})
 	}
 
