@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -30,22 +31,24 @@ var (
 )
 
 func init() {
-	// Replicating INTERNAL_SEED = secrets.token_hex(64) from app.py
+	// Initialize high-entropy seed for HMAC/JWT
 	seedBytes := make([]byte, 64)
 	if _, err := rand.Read(seedBytes); err != nil {
-		panic(err)
+		panic("Failed to generate secure seed")
 	}
 	internalSeed = hex.EncodeToString(seedBytes)
-	jwtSecret = []byte(deriveKey("jwt-signing"))
 	
+	// JWT Secret derived from internal seed via HMAC
+	jwtSecret = []byte(deriveHMAC(internalSeed, "jwt-signing-v1"))
+	
+	// Industry standard structured logging
 	l, _ := zap.NewProduction()
 	logger = l
 }
 
-func deriveKey(purpose string) string {
-	// Replicating hashlib.sha256(f"{INTERNAL_SEED}-{purpose}".encode())
-	h := sha256.New()
-	h.Write([]byte(fmt.Sprintf("%s-%s", internalSeed, purpose)))
+func deriveHMAC(seed, purpose string) string {
+	h := hmac.New(sha256.New, []byte(seed))
+	h.Write([]byte(purpose))
 	return hex.EncodeToString(h.Sum(nil))
 }
 
@@ -55,113 +58,127 @@ func initTracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
 		endpoint = "otel-collector.logging.svc.cluster.local:4317"
 	}
 
-	exporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithInsecure(), otlptracegrpc.WithEndpoint(endpoint))
+	exporter, err := otlptracegrpc.New(ctx, 
+		otlptracegrpc.WithInsecure(), 
+		otlptracegrpc.WithEndpoint(endpoint),
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	// Replicating Resource from app.py
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(exporter),
 		sdktrace.WithResource(resource.NewWithAttributes(
 			semconv.SchemaURL,
 			semconv.ServiceNameKey.String("k-api"),
-			semconv.ServiceNamespaceKey.String("default"),
 			attribute.String("deployment.environment", "production"),
+			attribute.String("cluster.type", "kind"),
 		)),
 	)
 	otel.SetTracerProvider(tp)
 	return tp, nil
 }
 
+// HandshakeMiddleware enforces logic progression based on the 0-5 requirements
+func HandshakeMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		path := c.Request.URL.Path
+
+		// JWT validation for Level 3
+		if path == "/api/level/3" {
+			auth := c.GetHeader("Authorization")
+			if !strings.HasPrefix(auth, "Bearer ") {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "JWT Bearer token required"})
+				return
+			}
+			tokenStr := strings.TrimPrefix(auth, "Bearer ")
+			token, _ := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) { return jwtSecret, nil })
+			if token == nil || !token.Valid {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid/Expired JWT"})
+				return
+			}
+		}
+
+		// HMAC validation for Level 4
+		if path == "/api/level/4" {
+			sig := c.GetHeader("X-HMAC-Signature")
+			if sig != deriveHMAC(internalSeed, "level4-access") {
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "HMAC signature mismatch"})
+				return
+			}
+		}
+
+		c.Next()
+	}
+}
+
 func main() {
 	ctx := context.Background()
-	tp, _ := initTracer(ctx)
-	if tp != nil {
+	tp, err := initTracer(ctx)
+	if err != nil {
+		logger.Warn("Tracing unavailable", zap.Error(err))
+	} else {
 		defer func() { _ = tp.Shutdown(ctx) }()
 	}
 
 	r := gin.New()
-	r.Use(gin.Recovery())
+	r.Use(gin.Recovery(), HandshakeMiddleware())
 
-	// Replicating /health for probes
+	// --- SYSTEM ENDPOINTS ---
 	r.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "healthy"})
+		c.JSON(http.StatusOK, gin.H{"status": "UP", "timestamp": time.Now().Unix()})
 	})
 
-	// Level 1: Basic Auth Discovery
+	// --- LEVEL 0: Entry Point ---
+	r.GET("/api", func(c *gin.Context) {
+		c.Header("X-Next-Level-Auth", "Basic YXBpX2h1bnRlcjpwQHM1VzByRA==")
+		c.JSON(200, gin.H{"hint": "Check headers for Basic Auth", "next": "/api/level/1"})
+	})
+
+	// --- LEVEL 1: Basic Auth ---
 	r.GET("/api/level/1", func(c *gin.Context) {
 		user, pass, ok := c.Request.BasicAuth()
 		if !ok || user != "api_hunter" || pass != "p@s5W0rD" {
-			c.Header("WWW-Authenticate", `Basic realm="Restricted"`)
-			c.AbortWithStatus(401)
+			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"status": "success", "next_level": "/api/level/2"})
+		c.JSON(200, gin.H{"x_identity_token": "lattice_explorer_v1", "next": "/api/level/2"})
 	})
 
-	// Level 2: API Key Validation
+	// --- LEVEL 2: X-Identity ---
 	r.GET("/api/level/2", func(c *gin.Context) {
-		if c.GetHeader("X-API-Key") != "hunter_v1" {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Invalid API Key"})
+		if c.GetHeader("X-Identity-Token") != "lattice_explorer_v1" {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "X-Identity-Token missing"})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"status": "success", "next_level": "/api/level/3"})
-	})
-
-	// Level 3: Identity Token Validation
-	r.GET("/api/level/3", func(c *gin.Context) {
-		if c.GetHeader("X-Identity-Token") != "discovery_agent" {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Invalid Identity Token"})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"status": "success", "next_level": "/api/level/4"})
-	})
-
-	// Level 4: Signature Verification
-	r.GET("/api/level/4", func(c *gin.Context) {
-		id := c.GetHeader("X-Identity-Token")
-		sig := c.GetHeader("X-Signature")
-		if id == "" || sig != deriveKey(id) {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Signature mismatch"})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"status": "success", "next_level": "/api/level/5"})
-	})
-
-	// Level 5: Login for JWT
-	r.POST("/login", func(c *gin.Context) {
 		token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+			"sub": "explorer",
 			"exp": time.Now().Add(time.Hour).Unix(),
 		})
 		tString, _ := token.SignedString(jwtSecret)
-		c.JSON(http.StatusOK, gin.H{
-			"token":              tString,
-			"internal_challenge": internalSeed,
-		})
+		c.JSON(200, gin.H{"jwt": tString, "next": "/api/level/3"})
 	})
 
-	// Authenticated API
-	api := r.Group("/api/v1")
-	api.Use(func(c *gin.Context) {
-		auth := c.GetHeader("Authorization")
-		if !strings.HasPrefix(auth, "Bearer ") {
-			c.AbortWithStatus(http.StatusUnauthorized)
-			return
-		}
-		tokenStr := strings.TrimPrefix(auth, "Bearer ")
-		token, _ := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) { return jwtSecret, nil })
-		if token == nil || !token.Valid {
-			c.AbortWithStatus(http.StatusUnauthorized)
-			return
-		}
-		c.Next()
+	// --- LEVEL 3: JWT Bearer (Validated by Middleware) ---
+	r.GET("/api/level/3", func(c *gin.Context) {
+		c.JSON(200, gin.H{"internal_seed": internalSeed, "next": "/api/level/4"})
 	})
-	{
-		api.GET("/status", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"data": "Cluster Operational", "level": 5})
-		})
-	}
 
+	// --- LEVEL 4: HMAC (Validated by Middleware) ---
+	r.GET("/api/level/4", func(c *gin.Context) {
+		c.JSON(200, gin.H{"lattice_challenge": "A:[1,2], s:[3,4], e:1", "next": "/api/level/5"})
+	})
+
+	// --- LEVEL 5: Lattice (Simplified PQC) ---
+	r.POST("/api/level/5", func(c *gin.Context) {
+		var req struct { Ans int `json:"ans"` }
+		if err := c.ShouldBindJSON(&req); err != nil || req.Ans != 12 {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Lattice key mismatch"})
+			return
+		}
+		c.JSON(200, gin.H{"status": "Auth Success", "flag": "QUANTUM_STABILITY_REACHED"})
+	})
+
+	logger.Info("Starting k-api on :8080")
 	r.Run(":8080")
 }
