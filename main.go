@@ -25,18 +25,28 @@ import (
 var (
 	internalSeed string
 	jwtSecret    []byte
+	apiUser      string // New
+	apiPass      string // New
 	logger       *zap.Logger
-	tracer       = otel.Tracer("k-api")
 )
 
 func init() {
-	seedBytes := make([]byte, 64)
-	if _, err := rand.Read(seedBytes); err != nil {
-		panic("Failed to generate secure seed")
+	// 1. Seed handling
+	internalSeed = os.Getenv("INTERNAL_SEED")
+	if internalSeed == "" {
+		seedBytes := make([]byte, 64)
+		rand.Read(seedBytes)
+		internalSeed = hex.EncodeToString(seedBytes)
 	}
-	internalSeed = hex.EncodeToString(seedBytes)
-	jwtSecret = []byte(deriveHMAC(internalSeed, "jwt-signing-v1"))
+
+	// 2. Auth Creds handling
+	apiUser = os.Getenv("API_USER")
+	if apiUser == "" { apiUser = "api_hunter" }
 	
+	apiPass = os.Getenv("API_PASS")
+	if apiPass == "" { apiPass = "p@s5W0rD" }
+
+	jwtSecret = []byte(deriveHMAC(internalSeed, "jwt-signing-v1"))
 	l, _ := zap.NewProduction()
 	logger = l
 }
@@ -133,7 +143,7 @@ func main() {
 
 	r.GET("/api/level/1", func(c *gin.Context) {
 		user, pass, ok := c.Request.BasicAuth()
-		if !ok || user != "api_hunter" || pass != "p@s5W0rD" {
+		if !ok || user != apiUser || pass != apiPass {
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
