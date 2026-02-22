@@ -58,7 +58,7 @@ func initTracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
 	}
 
 	exporter, err := otlptracegrpc.New(ctx, 
-		otlptrac
+		otlptrac,
 
 	// --- LEVELegrpc.WithInsecure(), 
 		otlptracegrpc.WithEndpoint(endpoint),
