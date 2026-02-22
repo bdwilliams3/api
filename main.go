@@ -30,17 +30,13 @@ var (
 )
 
 func init() {
-	// Initialize high-entropy seed for HMAC/JWT
 	seedBytes := make([]byte, 64)
 	if _, err := rand.Read(seedBytes); err != nil {
 		panic("Failed to generate secure seed")
 	}
 	internalSeed = hex.EncodeToString(seedBytes)
-	
-	// JWT Secret derived from internal seed via HMAC
 	jwtSecret = []byte(deriveHMAC(internalSeed, "jwt-signing-v1"))
 	
-	// Industry standard structured logging
 	l, _ := zap.NewProduction()
 	logger = l
 }
@@ -58,9 +54,7 @@ func initTracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
 	}
 
 	exporter, err := otlptracegrpc.New(ctx, 
-		otlptrac,
-
-	// --- LEVELegrpc.WithInsecure(), 
+		otlptracegrpc.WithInsecure(), 
 		otlptracegrpc.WithEndpoint(endpoint),
 	)
 	if err != nil {
@@ -72,9 +66,7 @@ func initTracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
 		sdktrace.WithResource(resource.NewWithAttributes(
 			semconv.SchemaURL,
 			semconv.ServiceNameKey.String("k-api"),
-			attr
-
-	// --- LEVELibute.String("deployment.environment", "production"),
+			attribute.String("deployment.environment", "production"),
 			attribute.String("cluster.type", "kind"),
 		)),
 	)
@@ -82,12 +74,10 @@ func initTracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
 	return tp, nil
 }
 
-// HandshakeMiddleware enforces logic progression based on the 0-5 requirements
 func HandshakeMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		path := c.Request.URL.Path
 
-		// JWT validation for Level 3
 		if path == "/api/level/3" {
 			auth := c.GetHeader("Authorization")
 			if !strings.HasPrefix(auth, "Bearer ") {
@@ -102,7 +92,6 @@ func HandshakeMiddleware() gin.HandlerFunc {
 			}
 		}
 
-		// HMAC validation for Level 4
 		if path == "/api/level/4" {
 			sig := c.GetHeader("X-HMAC-Signature")
 			if sig != deriveHMAC(internalSeed, "level4-access") {
@@ -127,30 +116,33 @@ func main() {
 	r := gin.New()
 	r.Use(gin.Recovery(), HandshakeMiddleware())
 
-	// --- SYSTEM ENDPOINTS ---
 	r.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "UP", "timestamp": time.Now().Unix()})
+		c.JSON(http.StatusOK, gin.H{
+			"status":    "UP",
+			"timestamp": time.Now().Unix(),
+		})
 	})
 
-	// --- LEVEL 0: Entry Point ---
 	r.GET("/api", func(c *gin.Context) {
 		c.Header("X-Next-Level-Auth", "Basic YXBpX2h1bnRlcjpwQHM1VzByRA==")
-		c.JSON(200, gin.H{"hint": "Check headers for Basic Auth", "next": "/api/level/1"})
+		c.JSON(http.StatusOK, gin.H{
+			"hint": "Check headers for Basic Auth",
+			"next": "/api/level/1",
+		})
 	})
 
-	// --- LEVEL 1: Basic Auth ---
 	r.GET("/api/level/1", func(c *gin.Context) {
 		user, pass, ok := c.Request.BasicAuth()
 		if !ok || user != "api_hunter" || pass != "p@s5W0rD" {
-			c.go:9:2: "fmt" imported and not used
-10
-Error: Process completed with exit code 1.AbortWithStatus(http.StatusUnauthorized)
+			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
-		c.JSON(200, gin.H{"x_identity_token": "lattice_explorer_v1", "next": "/api/level/2"})
+		c.JSON(http.StatusOK, gin.H{
+			"x_identity_token": "lattice_explorer_v1",
+			"next":             "/api/level/2",
+		})
 	})
 
-	// --- LEVEL 2: X-Identity ---
 	r.GET("/api/level/2", func(c *gin.Context) {
 		if c.GetHeader("X-Identity-Token") != "lattice_explorer_v1" {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "X-Identity-Token missing"})
@@ -161,27 +153,38 @@ Error: Process completed with exit code 1.AbortWithStatus(http.StatusUnauthorize
 			"exp": time.Now().Add(time.Hour).Unix(),
 		})
 		tString, _ := token.SignedString(jwtSecret)
-		c.JSON(200, gin.H{"jwt": tString, "next": "/api/level/3"})
+		c.JSON(http.StatusOK, gin.H{
+			"jwt":  tString,
+			"next": "/api/level/3",
+		})
 	})
 
-	// --- LEVEL 3: JWT Bearer (Validated by Middleware) ---
 	r.GET("/api/level/3", func(c *gin.Context) {
-		c.JSON(200, gin.H{"internal_seed": internalSeed, "next": "/api/level/4"})
+		c.JSON(http.StatusOK, gin.H{
+			"internal_seed": internalSeed,
+			"next":          "/api/level/4",
+		})
 	})
 
-	// --- LEVEL 4: HMAC (Validated by Middleware) ---
 	r.GET("/api/level/4", func(c *gin.Context) {
-		c.JSON(200, gin.H{"lattice_challenge": "A:[1,2], s:[3,4], e:1", "next": "/api/level/5"})
+		c.JSON(http.StatusOK, gin.H{
+			"lattice_challenge": "A:[1,2], s:[3,4], e:1",
+			"next":              "/api/level/5",
+		})
 	})
 
-	// --- LEVEL 5: Lattice (Simplified PQC) ---
 	r.POST("/api/level/5", func(c *gin.Context) {
-		var req struct { Ans int `json:"ans"` }
+		var req struct {
+			Ans int `json:"ans"`
+		}
 		if err := c.ShouldBindJSON(&req); err != nil || req.Ans != 12 {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Lattice key mismatch"})
 			return
 		}
-		c.JSON(200, gin.H{"status": "Auth Success", "flag": "QUANTUM_STABILITY_REACHED"})
+		c.JSON(http.StatusOK, gin.H{
+			"status": "Auth Success",
+			"flag":   "QUANTUM_STABILITY_REACHED",
+		})
 	})
 
 	logger.Info("Starting k-api on :8080")
