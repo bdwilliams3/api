@@ -1,22 +1,17 @@
-# Stage 1: Builder - installs dependencies into /install prefix
-FROM python:3.12-slim-bookworm AS builder
+# Stage 1: Build the Go binary
+FROM golang:1.23-alpine AS builder
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir --prefix=/install --only-binary=:all: -r requirements.txt
-COPY . .
+COPY go.mod go.sum ./
+RUN go mod download
+COPY main.go ./
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o k-api main.go
 
-# Stage 2: Distroless runtime - no shell, runs as nonroot uid 65532
-FROM gcr.io/distroless/python3-debian12:nonroot
-WORKDIR /app
-
-# Copy installed packages and app code from builder
-COPY --from=builder /install /usr/local
-COPY --from=builder /app /app
-COPY --from=builder /usr/lib/x86_64-linux-gnu/libstdc++.so.6 /usr/lib/x86_64-linux-gnu/libstdc++.so.6
-
-# Point Python to the installed packages
-ENV PYTHONPATH="/usr/local/lib/python3.12/site-packages:/app"
-
-USER 65532
+# Stage 2: Final minimal image
+FROM alpine:latest
+RUN apk --no-cache add ca-certificates
+WORKDIR /root/
+COPY --from=builder /app/k-api .
+# Run as a non-root user for security
+USER 1000
 EXPOSE 8080
-ENTRYPOINT ["python3", "-m", "flask", "run", "--host=0.0.0.0", "--port=8080"]
+CMD ["./k-api"]

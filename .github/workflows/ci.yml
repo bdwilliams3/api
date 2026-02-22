@@ -5,9 +5,10 @@ on:
     branches:
       - master
     paths:
-      - 'app.py'
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
       - 'Dockerfile'
-      - 'requirements.txt'
 
 env:
   REGISTRY: ghcr.io
@@ -24,19 +25,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      # REPLACE Python setup and Bandit with Go setup
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          python-version: '3.9'
+          go-version: '1.23'
+          cache: true
 
-      - name: Install Bandit
-        run: pip install bandit
+      - name: Verify dependencies
+        run: go mod verify
 
-      - name: Run Bandit Security Scan
-        run: |
-          bandit -r app.py -f json -o bandit-report.json || true
-          bandit -r app.py
-        continue-on-error: false
+      - name: Run Go Vet
+        run: go vet ./...
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -81,6 +81,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
       - name: Delete old image tags
         uses: actions/delete-package-versions@v5
         with:

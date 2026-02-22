@@ -1,8 +1,0 @@
-Flask
-PyJWT
-Flask-Limiter
-opentelemetry-api
-opentelemetry-sdk
-opentelemetry-instrumentation-flask
-opentelemetry-exporter-otlp-proto-grpc
-grpcio
