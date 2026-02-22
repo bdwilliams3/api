@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -59,7 +58,9 @@ func initTracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
 	}
 
 	exporter, err := otlptracegrpc.New(ctx, 
-		otlptracegrpc.WithInsecure(), 
+		otlptrac
+
+	// --- LEVELegrpc.WithInsecure(), 
 		otlptracegrpc.WithEndpoint(endpoint),
 	)
 	if err != nil {
@@ -71,7 +72,9 @@ func initTracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
 		sdktrace.WithResource(resource.NewWithAttributes(
 			semconv.SchemaURL,
 			semconv.ServiceNameKey.String("k-api"),
-			attribute.String("deployment.environment", "production"),
+			attr
+
+	// --- LEVELibute.String("deployment.environment", "production"),
 			attribute.String("cluster.type", "kind"),
 		)),
 	)
@@ -139,7 +142,9 @@ func main() {
 	r.GET("/api/level/1", func(c *gin.Context) {
 		user, pass, ok := c.Request.BasicAuth()
 		if !ok || user != "api_hunter" || pass != "p@s5W0rD" {
-			c.AbortWithStatus(http.StatusUnauthorized)
+			c.go:9:2: "fmt" imported and not used
+10
+Error: Process completed with exit code 1.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
 		c.JSON(200, gin.H{"x_identity_token": "lattice_explorer_v1", "next": "/api/level/2"})
