@@ -12,13 +12,19 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"github.com/golang-jwt/jwt/v5"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/log/global"
+	"go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
@@ -28,6 +34,7 @@ var (
 	apiUser      string // New
 	apiPass      string // New
 	logger       *zap.Logger
+	logProvider  *log.LoggerProvider
 )
 
 func init() {
@@ -49,12 +56,39 @@ func init() {
     jwtSecret = []byte(deriveHMAC(internalSeed, "jwt-signing-v1"))
     l, _ := zap.NewProduction()
     logger = l
+
+    // 3. Initialize OTLP Log Exporter for Loki
+    logExporter, err := otlploggrpc.New(context.Background(),
+        otlploggrpc.WithInsecure(),
+        otlploggrpc.WithEndpoint("otel-collector.logging.svc.cluster.local:4317"),
+    )
+    if err != nil {
+        logger.Warn("OTLP log exporter initialization failed", zap.Error(err))
+    } else {
+        logProvider = log.NewLoggerProvider(
+            log.WithProcessor(log.NewBatchProcessor(logExporter)),
+        )
+        global.SetLoggerProvider(logProvider)
+    }
 }
 
 func deriveHMAC(seed, purpose string) string {
     h := hmac.New(sha256.New, []byte(seed))
     h.Write([]byte(purpose))
     return hex.EncodeToString(h.Sum(nil))
+}
+
+// getLoggerWithTrace returns a logger that includes trace context (trace ID and span ID) from the request context
+func getLoggerWithTrace(ctx context.Context) *zap.Logger {
+	span := trace.SpanFromContext(ctx)
+	fields := []zap.Field{}
+	if span.SpanContext().IsValid() {
+		fields = append(fields,
+			zap.String("trace_id", span.SpanContext().TraceID().String()),
+			zap.String("span_id", span.SpanContext().SpanID().String()),
+		)
+	}
+	return logger.With(fields...)
 }
 
 func initTracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
@@ -80,7 +114,9 @@ func initTracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
 			attribute.String("cluster.type", "kind"),
 		)),
 	)
+	
 	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
 	return tp, nil
 }
 
@@ -124,6 +160,7 @@ func main() {
 	}
 
 	r := gin.New()
+	r.Use(otelgin.Middleware("k-api"))
 	r.Use(gin.Recovery(), HandshakeMiddleware())
 
 	r.GET("/health", func(c *gin.Context) {
@@ -214,5 +251,13 @@ func main() {
 	
 
 	logger.Info("Starting k-api on :8080")
+	defer func() {
+		if logProvider != nil {
+			_ = logProvider.Shutdown(ctx)
+		}
+		if err := logger.Sync(); err != nil {
+			// Sync may fail on some systems, ignore
+		}
+	}()
 	r.Run(":8080")
 }
