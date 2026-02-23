@@ -31,30 +31,30 @@ var (
 )
 
 func init() {
-	// 1. Seed handling
-	internalSeed = os.Getenv("INTERNAL_SEED")
-	if internalSeed == "" {
-		seedBytes := make([]byte, 64)
-		rand.Read(seedBytes)
-		internalSeed = hex.EncodeToString(seedBytes)
-	}
+    // 1. Seed handling - TrimSpace is critical for K8s Secret injection
+    internalSeed = strings.TrimSpace(os.Getenv("INTERNAL_SEED"))
+    if internalSeed == "" {
+        seedBytes := make([]byte, 64)
+        rand.Read(seedBytes)
+        internalSeed = hex.EncodeToString(seedBytes)
+    }
 
-	// 2. Auth Creds handling
-	apiUser = os.Getenv("API_USER")
-	if apiUser == "" { apiUser = "api_hunter" }
-	
-	apiPass = os.Getenv("API_PASS")
-	if apiPass == "" { apiPass = "p@s5W0rD" }
+    // 2. Auth Creds handling
+    apiUser = os.Getenv("API_USER")
+    if apiUser == "" { apiUser = "api_hunter" }
+    
+    apiPass = os.Getenv("API_PASS")
+    if apiPass == "" { apiPass = "p@s5W0rD" }
 
-	jwtSecret = []byte(deriveHMAC(internalSeed, "jwt-signing-v1"))
-	l, _ := zap.NewProduction()
-	logger = l
+    jwtSecret = []byte(deriveHMAC(internalSeed, "jwt-signing-v1"))
+    l, _ := zap.NewProduction()
+    logger = l
 }
 
 func deriveHMAC(seed, purpose string) string {
-	h := hmac.New(sha256.New, []byte(seed))
-	h.Write([]byte(purpose))
-	return hex.EncodeToString(h.Sum(nil))
+    h := hmac.New(sha256.New, []byte(seed))
+    h.Write([]byte(purpose))
+    return hex.EncodeToString(h.Sum(nil))
 }
 
 func initTracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
@@ -178,24 +178,40 @@ func main() {
 
 	r.GET("/api/level/4", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
-			"lattice_challenge": "A:[1,2], s:[3,4], e:1",
-			"next":              "/api/level/5",
-		})
+        "lattice_challenge": "A:[1,2], s:[3,4], e:1",
+        "clearance":         deriveHMAC(internalSeed, "level5-permit"), // New Token
+        "next":              "/api/level/5",
+    	})
 	})
 
+	// Replace your existing Level 5 POST handler with this:
 	r.POST("/api/level/5", func(c *gin.Context) {
+		// 1. Mandatory Clearance Check
+		permit := c.GetHeader("X-Level-Clearance")
+		if permit != deriveHMAC(internalSeed, "level5-permit") {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"error": "Sequential flow violation: Level 4 clearance required",
+			})
+			return
+		}
+
+		// 2. Existing Lattice Math logic
 		var req struct {
 			Ans int `json:"ans"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil || req.Ans != 12 {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Lattice key mismatch"})
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"error": "Lattice key mismatch",
+			})
 			return
 		}
+
 		c.JSON(http.StatusOK, gin.H{
 			"status": "Auth Success",
 			"flag":   "QUANTUM_STABILITY_REACHED",
 		})
 	})
+	
 
 	logger.Info("Starting k-api on :8080")
 	r.Run(":8080")

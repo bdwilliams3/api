@@ -105,11 +105,20 @@ spec:
       automountServiceAccountToken: false
       containers:
       - name: k-api
-        image: ghcr.io/bdwilliams3/k-api:master-1771769566-f282236 # {"$imagepolicy": "flux-system:k-api"}
+        image: ghcr.io/bdwilliams3/k-api:master-1771724556-167059b # {"$imagepolicy": "flux-system:k-api"}
         imagePullPolicy: IfNotPresent
         env:
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: "otel-collector.logging.svc.cluster.local:4317"
+        - name: INTERNAL_SEED
+          valueFrom:
+            secretKeyRef:
+              name: k-api-secrets
+              key: INTERNAL_SEED
+        - name: API_USER
+          value: "api_hunter"
+        - name: API_PASS
+          value: "p@s5W0rD"
         ports:
         - containerPort: 8080
         resources:
