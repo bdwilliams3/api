@@ -38,7 +38,6 @@ var (
 )
 
 func init() {
-    // 1. Seed handling - TrimSpace is critical for K8s Secret injection
     internalSeed = strings.TrimSpace(os.Getenv("INTERNAL_SEED"))
     if internalSeed == "" {
         seedBytes := make([]byte, 64)
@@ -46,7 +45,6 @@ func init() {
         internalSeed = hex.EncodeToString(seedBytes)
     }
 
-    // 2. Auth Creds handling
     apiUser = os.Getenv("API_USER")
     if apiUser == "" { apiUser = "api_hunter" }
     
@@ -57,7 +55,6 @@ func init() {
     l, _ := zap.NewProduction()
     logger = l
 
-    // 3. Initialize OTLP Log Exporter for Loki
     logExporter, err := otlploggrpc.New(context.Background(),
         otlploggrpc.WithInsecure(),
         otlploggrpc.WithEndpoint("otel-collector.logging.svc.cluster.local:4317"),
@@ -78,7 +75,6 @@ func deriveHMAC(seed, purpose string) string {
     return hex.EncodeToString(h.Sum(nil))
 }
 
-// getLoggerWithTrace returns a logger that includes trace context (trace ID and span ID) from the request context
 func getLoggerWithTrace(ctx context.Context) *zap.Logger {
 	span := trace.SpanFromContext(ctx)
 	fields := []zap.Field{}
@@ -164,6 +160,8 @@ func main() {
 	r.Use(gin.Recovery(), HandshakeMiddleware())
 
 	r.GET("/health", func(c *gin.Context) {
+		log := getLoggerWithTrace(c.Request.Context())
+		log.Info("health check")
 		c.JSON(http.StatusOK, gin.H{
 			"status":    "UP",
 			"timestamp": time.Now().Unix(),
@@ -180,10 +178,13 @@ func main() {
 
 	r.GET("/api/level/1", func(c *gin.Context) {
 		user, pass, ok := c.Request.BasicAuth()
+		log := getLoggerWithTrace(c.Request.Context())
 		if !ok || user != apiUser || pass != apiPass {
+			log.Warn("failed basic auth", zap.String("user", user), zap.Bool("ok", ok))
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
+		log.Info("basic auth succeeded", zap.String("user", user))
 		c.JSON(http.StatusOK, gin.H{
 			"x_identity_token": "lattice_explorer_v1",
 			"next":             "/api/level/2",
@@ -221,7 +222,6 @@ func main() {
     	})
 	})
 
-	// Replace your existing Level 5 POST handler with this:
 	r.POST("/api/level/5", func(c *gin.Context) {
 		// 1. Mandatory Clearance Check
 		permit := c.GetHeader("X-Level-Clearance")
@@ -256,7 +256,7 @@ func main() {
 			_ = logProvider.Shutdown(ctx)
 		}
 		if err := logger.Sync(); err != nil {
-			// Sync may fail on some systems, ignore
+			logger.Warn("Logger sync failed", zap.Error(err))
 		}
 	}()
 	r.Run(":8080")
