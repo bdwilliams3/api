@@ -10,7 +10,7 @@ import (
 	"os"
 	"strings"
 	"time"
-
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
@@ -54,19 +54,6 @@ func init() {
     jwtSecret = []byte(deriveHMAC(internalSeed, "jwt-signing-v1"))
     l, _ := zap.NewProduction()
     logger = l
-
-    logExporter, err := otlploggrpc.New(context.Background(),
-        otlploggrpc.WithInsecure(),
-        otlploggrpc.WithEndpoint("otel-collector.logging.svc.cluster.local:4317"),
-    )
-    if err != nil {
-        logger.Warn("OTLP log exporter initialization failed", zap.Error(err))
-    } else {
-        logProvider = log.NewLoggerProvider(
-            log.WithProcessor(log.NewBatchProcessor(logExporter)),
-        )
-        global.SetLoggerProvider(logProvider)
-    }
 }
 
 func deriveHMAC(seed, purpose string) string {
@@ -148,16 +135,32 @@ func HandshakeMiddleware() gin.HandlerFunc {
 
 func main() {
 	ctx := context.Background()
-	tp, err := initTracer(ctx)
-	if err != nil {
-		logger.Warn("Tracing unavailable", zap.Error(err))
-	} else {
-		defer func() { _ = tp.Shutdown(ctx) }()
-	}
+    tp, err := initTracer(ctx)
+    if err != nil {
+        logger.Warn("Tracing unavailable", zap.Error(err))
+    } else {
+        defer func() { _ = tp.Shutdown(ctx) }()
+    }
 
-	r := gin.New()
-	r.Use(otelgin.Middleware("k-api"))
-	r.Use(gin.Recovery(), HandshakeMiddleware())
+    // Initialize log provider BEFORE using logger
+    if logProvider == nil {
+        logExporter, err := otlploggrpc.New(ctx,
+            otlploggrpc.WithInsecure(),
+            otlploggrpc.WithEndpoint("otel-collector.logging.svc.cluster.local:4317"),
+        )
+        if err != nil {
+            fmt.Printf("Failed to create OTLP log exporter: %v\n", err)
+        } else {
+            logProvider = log.NewLoggerProvider(
+                log.WithProcessor(log.NewBatchProcessor(logExporter)),
+            )
+            global.SetLoggerProvider(logProvider)
+        }
+    }
+
+    r := gin.New()
+    r.Use(otelgin.Middleware("k-api"))
+    r.Use(gin.Recovery(), HandshakeMiddleware())
 
 	r.GET("/health", func(c *gin.Context) {
 		log := getLoggerWithTrace(c.Request.Context())
@@ -251,13 +254,13 @@ func main() {
 	
 
 	logger.Info("Starting k-api on :8080")
-	defer func() {
-		if logProvider != nil {
-			_ = logProvider.Shutdown(ctx)
-		}
-		if err := logger.Sync(); err != nil {
-			logger.Warn("Logger sync failed", zap.Error(err))
-		}
-	}()
-	r.Run(":8080")
+    defer func() {
+        if logProvider != nil {
+            _ = logProvider.Shutdown(ctx)
+        }
+        if err := logger.Sync(); err != nil {
+            logger.Warn("Logger sync failed", zap.Error(err))
+        }
+    }()
+    r.Run(":8080")
 }
