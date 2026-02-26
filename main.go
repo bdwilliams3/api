@@ -222,6 +222,7 @@ func main() {
 	})
 
 	r.GET("/api", func(c *gin.Context) {
+		logInfo(c.Request.Context(), "API root endpoint called")
 		c.Header("X-Next-Level-Auth", "Basic YXBpX2h1bnRlcjpwQHM1VzByRA==")
 		c.JSON(http.StatusOK, gin.H{
 			"hint": "Check headers for Basic Auth",
@@ -245,9 +246,11 @@ func main() {
 
 	r.GET("/api/level/2", func(c *gin.Context) {
 		if c.GetHeader("X-Identity-Token") != "lattice_explorer_v1" {
+			logWarn(c.Request.Context(), "level/2 - X-Identity-Token missing")
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "X-Identity-Token missing"})
 			return
 		}
+		logInfo(c.Request.Context(), "level/2 - X-Identity-Token verified")
 		token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 			"sub": "explorer",
 			"exp": time.Now().Add(time.Hour).Unix(),
@@ -260,6 +263,7 @@ func main() {
 	})
 
 	r.GET("/api/level/3", func(c *gin.Context) {
+		logInfo(c.Request.Context(), "level/3 - internal_seed endpoint called")
 		c.JSON(http.StatusOK, gin.H{
 			"internal_seed": internalSeed,
 			"next":          "/api/level/4",
@@ -267,6 +271,7 @@ func main() {
 	})
 
 	r.GET("/api/level/4", func(c *gin.Context) {
+		logInfo(c.Request.Context(), "level/4 - clearance token endpoint called")
 		c.JSON(http.StatusOK, gin.H{
         "lattice_challenge": "A:[1,2], s:[3,4], e:1",
         "clearance":         deriveHMAC(internalSeed, "level5-permit"), // New Token
@@ -278,6 +283,7 @@ func main() {
 		// 1. Mandatory Clearance Check
 		permit := c.GetHeader("X-Level-Clearance")
 		if permit != deriveHMAC(internalSeed, "level5-permit") {
+			logWarn(c.Request.Context(), "level/5 - invalid clearance token")
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
 				"error": "Sequential flow violation: Level 4 clearance required",
 			})
@@ -289,12 +295,14 @@ func main() {
 			Ans int `json:"ans"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil || req.Ans != 12 {
+			logWarn(c.Request.Context(), fmt.Sprintf("level/5 - lattice answer mismatch: got %d, expected 12", req.Ans))
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
 				"error": "Lattice key mismatch",
 			})
 			return
 		}
 
+		logInfo(c.Request.Context(), "level/5 - auth success, flag unlocked")
 		c.JSON(http.StatusOK, gin.H{
 			"status": "Auth Success",
 			"flag":   "QUANTUM_STABILITY_REACHED",
