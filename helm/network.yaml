@@ -15,7 +15,9 @@ spec:
           kubernetes.io/metadata.name: logging
     ports:
     - protocol: TCP
-      port: 8123
+      port: 4317
+    - protocol: TCP
+      port: 4318
 ---
 apiVersion: networking.istio.io/v1
 kind: VirtualService

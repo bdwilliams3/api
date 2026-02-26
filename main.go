@@ -31,8 +31,8 @@ import (
 var (
 	internalSeed string
 	jwtSecret    []byte
-	apiUser      string // New
-	apiPass      string // New
+	apiUser      string
+	apiPass      string
 	logger       *zap.Logger
 	logProvider  *log.LoggerProvider
 )
@@ -52,8 +52,6 @@ func init() {
     if apiPass == "" { apiPass = "p@s5W0rD" }
 
     jwtSecret = []byte(deriveHMAC(internalSeed, "jwt-signing-v1"))
-    l, _ := zap.NewProduction()
-    logger = l
 }
 
 func deriveHMAC(seed, purpose string) string {
@@ -103,6 +101,33 @@ func initTracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
 	return tp, nil
 }
 
+func initLogProvider(ctx context.Context) (*log.LoggerProvider, error) {
+	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	if endpoint == "" {
+		endpoint = "otel-collector.logging.svc.cluster.local:4317"
+	}
+	
+	logExporter, err := otlploggrpc.New(ctx,
+		otlploggrpc.WithInsecure(),
+		otlploggrpc.WithEndpoint(endpoint),
+	)
+	if err != nil {
+		return nil, err
+	}
+	
+	logProvider := log.NewLoggerProvider(
+		log.WithProcessor(log.NewBatchProcessor(logExporter)),
+		log.WithResource(resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceNameKey.String("k-api"),
+			attribute.String("deployment.environment", "production"),
+			attribute.String("cluster.type", "kind"),
+		)),
+	)
+	global.SetLoggerProvider(logProvider)
+	return logProvider, nil
+}
+
 func HandshakeMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		path := c.Request.URL.Path
@@ -135,36 +160,43 @@ func HandshakeMiddleware() gin.HandlerFunc {
 
 func main() {
 	ctx := context.Background()
-    tp, err := initTracer(ctx)
-    if err != nil {
-        logger.Warn("Tracing unavailable", zap.Error(err))
-    } else {
-        defer func() { _ = tp.Shutdown(ctx) }()
-    }
+	
+	// Initialize log provider FIRST so it can receive logs
+	var err error
+	logProvider, err = initLogProvider(ctx)
+	if err != nil {
+		fmt.Printf("Failed to initialize log provider: %v\n", err)
+	}
+	defer func() {
+		if logProvider != nil {
+			_ = logProvider.Shutdown(ctx)
+		}
+	}()
 
-    // Initialize log provider BEFORE using logger
-    if logProvider == nil {
-        logExporter, err := otlploggrpc.New(ctx,
-            otlploggrpc.WithInsecure(),
-            otlploggrpc.WithEndpoint("otel-collector.logging.svc.cluster.local:4317"),
-        )
-        if err != nil {
-            fmt.Printf("Failed to create OTLP log exporter: %v\n", err)
-        } else {
-            logProvider = log.NewLoggerProvider(
-                log.WithProcessor(log.NewBatchProcessor(logExporter)),
-            )
-            global.SetLoggerProvider(logProvider)
-        }
-    }
+	// Then initialize tracer
+	tp, err := initTracer(ctx)
+	if err != nil {
+		fmt.Printf("Tracing unavailable: %v\n", err)
+	} else {
+		defer func() { _ = tp.Shutdown(ctx) }()
+	}
 
-    r := gin.New()
-    r.Use(otelgin.Middleware("k-api"))
-    r.Use(gin.Recovery(), HandshakeMiddleware())
+	// Now create zap logger for use in handlers
+	var cfg zap.Config
+	cfg = zap.NewProductionConfig()
+	cfg.OutputPaths = []string{"stdout", "stderr"}
+	logger, _ = cfg.Build()
+	defer func() { _ = logger.Sync() }()
+
+	logger.Info("Starting k-api", zap.String("version", "1.0.0"))
+
+	r := gin.New()
+	r.Use(otelgin.Middleware("k-api"))
+	r.Use(gin.Recovery(), HandshakeMiddleware())
 
 	r.GET("/health", func(c *gin.Context) {
-		log := getLoggerWithTrace(c.Request.Context())
-		log.Info("health check")
+		logger := getLoggerWithTrace(c.Request.Context())
+		logger.Info("health check endpoint called")
 		c.JSON(http.StatusOK, gin.H{
 			"status":    "UP",
 			"timestamp": time.Now().Unix(),
@@ -251,16 +283,7 @@ func main() {
 			"flag":   "QUANTUM_STABILITY_REACHED",
 		})
 	})
-	
 
 	logger.Info("Starting k-api on :8080")
-    defer func() {
-        if logProvider != nil {
-            _ = logProvider.Shutdown(ctx)
-        }
-        if err := logger.Sync(); err != nil {
-            logger.Warn("Logger sync failed", zap.Error(err))
-        }
-    }()
-    r.Run(":8080")
+	r.Run(":8080")
 }
