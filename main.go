@@ -19,13 +19,13 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/log/global"
-	"go.opentelemetry.io/otel/sdk/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
 	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/zap"
 )
 
 var (
@@ -33,8 +33,8 @@ var (
 	jwtSecret    []byte
 	apiUser      string
 	apiPass      string
-	logger       *zap.Logger
-	logProvider  *log.LoggerProvider
+	logger       log.Logger
+	logProvider  *sdklog.LoggerProvider
 )
 
 func init() {
@@ -58,18 +58,6 @@ func deriveHMAC(seed, purpose string) string {
     h := hmac.New(sha256.New, []byte(seed))
     h.Write([]byte(purpose))
     return hex.EncodeToString(h.Sum(nil))
-}
-
-func getLoggerWithTrace(ctx context.Context) *zap.Logger {
-	span := trace.SpanFromContext(ctx)
-	fields := []zap.Field{}
-	if span.SpanContext().IsValid() {
-		fields = append(fields,
-			zap.String("trace_id", span.SpanContext().TraceID().String()),
-			zap.String("span_id", span.SpanContext().SpanID().String()),
-		)
-	}
-	return logger.With(fields...)
 }
 
 func initTracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
@@ -101,7 +89,7 @@ func initTracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
 	return tp, nil
 }
 
-func initLogProvider(ctx context.Context) (*log.LoggerProvider, error) {
+func initLogProvider(ctx context.Context) (*sdklog.LoggerProvider, error) {
 	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 	if endpoint == "" {
 		endpoint = "otel-collector.logging.svc.cluster.local:4317"
@@ -115,9 +103,9 @@ func initLogProvider(ctx context.Context) (*log.LoggerProvider, error) {
 		return nil, err
 	}
 	
-	logProvider := log.NewLoggerProvider(
-		log.WithProcessor(log.NewBatchProcessor(logExporter)),
-		log.WithResource(resource.NewWithAttributes(
+	logProvider := sdklog.NewLoggerProvider(
+		sdklog.WithProcessor(sdklog.NewBatchProcessor(logExporter)),
+		sdklog.WithResource(resource.NewWithAttributes(
 			semconv.SchemaURL,
 			semconv.ServiceNameKey.String("k-api"),
 			attribute.String("deployment.environment", "production"),
@@ -158,6 +146,41 @@ func HandshakeMiddleware() gin.HandlerFunc {
 	}
 }
 
+func logInfo(ctx context.Context, message string) {
+	if logger != nil {
+		record := log.Record{}
+		record.SetTimestamp(time.Now())
+		record.SetBody(log.StringValue(message))
+		record.SetSeverityText("INFO")
+		// Inject trace context if available
+		span := trace.SpanFromContext(ctx)
+		if span.SpanContext().IsValid() {
+			record.AddAttributes(
+				log.String("trace_id", span.SpanContext().TraceID().String()),
+				log.String("span_id", span.SpanContext().SpanID().String()),
+			)
+		}
+		logger.Emit(ctx, record)
+	}
+}
+
+func logWarn(ctx context.Context, message string) {
+	if logger != nil {
+		record := log.Record{}
+		record.SetTimestamp(time.Now())
+		record.SetBody(log.StringValue(message))
+		record.SetSeverityText("WARN")
+		span := trace.SpanFromContext(ctx)
+		if span.SpanContext().IsValid() {
+			record.AddAttributes(
+				log.String("trace_id", span.SpanContext().TraceID().String()),
+				log.String("span_id", span.SpanContext().SpanID().String()),
+			)
+		}
+		logger.Emit(ctx, record)
+	}
+}
+
 func main() {
 	ctx := context.Background()
 	
@@ -173,6 +196,9 @@ func main() {
 		}
 	}()
 
+	// Get logger from the global provider (now configured with OTEL exporter)
+	logger = global.Logger("k-api")
+
 	// Then initialize tracer
 	tp, err := initTracer(ctx)
 	if err != nil {
@@ -181,22 +207,14 @@ func main() {
 		defer func() { _ = tp.Shutdown(ctx) }()
 	}
 
-	// Now create zap logger for use in handlers
-	var cfg zap.Config
-	cfg = zap.NewProductionConfig()
-	cfg.OutputPaths = []string{"stdout", "stderr"}
-	logger, _ = cfg.Build()
-	defer func() { _ = logger.Sync() }()
-
-	logger.Info("Starting k-api", zap.String("version", "1.0.0"))
+	logInfo(ctx, "Starting k-api version 1.0.0")
 
 	r := gin.New()
 	r.Use(otelgin.Middleware("k-api"))
 	r.Use(gin.Recovery(), HandshakeMiddleware())
 
 	r.GET("/health", func(c *gin.Context) {
-		logger := getLoggerWithTrace(c.Request.Context())
-		logger.Info("health check endpoint called")
+		logInfo(c.Request.Context(), "health check endpoint called")
 		c.JSON(http.StatusOK, gin.H{
 			"status":    "UP",
 			"timestamp": time.Now().Unix(),
@@ -213,13 +231,12 @@ func main() {
 
 	r.GET("/api/level/1", func(c *gin.Context) {
 		user, pass, ok := c.Request.BasicAuth()
-		log := getLoggerWithTrace(c.Request.Context())
 		if !ok || user != apiUser || pass != apiPass {
-			log.Warn("failed basic auth", zap.String("user", user), zap.Bool("ok", ok))
+			logWarn(c.Request.Context(), fmt.Sprintf("failed basic auth - user: %s, ok: %v", user, ok))
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
-		log.Info("basic auth succeeded", zap.String("user", user))
+		logInfo(c.Request.Context(), fmt.Sprintf("basic auth succeeded - user: %s", user))
 		c.JSON(http.StatusOK, gin.H{
 			"x_identity_token": "lattice_explorer_v1",
 			"next":             "/api/level/2",
@@ -284,6 +301,6 @@ func main() {
 		})
 	})
 
-	logger.Info("Starting k-api on :8080")
+	logInfo(ctx, "Starting k-api on :8080")
 	r.Run(":8080")
 }
