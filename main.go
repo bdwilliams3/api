@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -76,7 +75,6 @@ func HandshakeMiddleware() gin.HandlerFunc {
 }
 
 func main() {
-	ctx := context.Background()
 	fmt.Println("Starting k-api version 1.0.0")
 
 	r := gin.New()
