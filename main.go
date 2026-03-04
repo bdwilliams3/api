@@ -12,20 +12,7 @@ import (
 	"time"
 	"fmt"
 	"github.com/gin-gonic/gin"
-	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"github.com/golang-jwt/jwt/v5"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
-	"go.opentelemetry.io/otel/log"
-	"go.opentelemetry.io/otel/log/global"
-	sdklog "go.opentelemetry.io/otel/sdk/log"
-	"go.opentelemetry.io/otel/sdk/resource"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
-	"go.opentelemetry.io/otel/trace"
 )
 
 var (
@@ -33,8 +20,6 @@ var (
 	jwtSecret    []byte
 	apiUser      string
 	apiPass      string
-	logger       log.Logger
-	logProvider  *sdklog.LoggerProvider
 )
 
 func init() {
@@ -58,62 +43,6 @@ func deriveHMAC(seed, purpose string) string {
     h := hmac.New(sha256.New, []byte(seed))
     h.Write([]byte(purpose))
     return hex.EncodeToString(h.Sum(nil))
-}
-
-func initTracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
-	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-	if endpoint == "" {
-		endpoint = "otel-collector.logging.svc.cluster.local:4317"
-	}
-
-	exporter, err := otlptracegrpc.New(ctx, 
-		otlptracegrpc.WithInsecure(), 
-		otlptracegrpc.WithEndpoint(endpoint),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exporter),
-		sdktrace.WithResource(resource.NewWithAttributes(
-			semconv.SchemaURL,
-			semconv.ServiceNameKey.String("k-api"),
-			attribute.String("deployment.environment", "production"),
-			attribute.String("cluster.type", "kind"),
-		)),
-	)
-	
-	otel.SetTracerProvider(tp)
-	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
-	return tp, nil
-}
-
-func initLogProvider(ctx context.Context) (*sdklog.LoggerProvider, error) {
-	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-	if endpoint == "" {
-		endpoint = "otel-collector.logging.svc.cluster.local:4317"
-	}
-	
-	logExporter, err := otlploggrpc.New(ctx,
-		otlploggrpc.WithInsecure(),
-		otlploggrpc.WithEndpoint(endpoint),
-	)
-	if err != nil {
-		return nil, err
-	}
-	
-	logProvider := sdklog.NewLoggerProvider(
-		sdklog.WithProcessor(sdklog.NewBatchProcessor(logExporter)),
-		sdklog.WithResource(resource.NewWithAttributes(
-			semconv.SchemaURL,
-			semconv.ServiceNameKey.String("k-api"),
-			attribute.String("deployment.environment", "production"),
-			attribute.String("cluster.type", "kind"),
-		)),
-	)
-	global.SetLoggerProvider(logProvider)
-	return logProvider, nil
 }
 
 func HandshakeMiddleware() gin.HandlerFunc {
@@ -146,75 +75,15 @@ func HandshakeMiddleware() gin.HandlerFunc {
 	}
 }
 
-func logInfo(ctx context.Context, message string) {
-	if logger != nil {
-		record := log.Record{}
-		record.SetTimestamp(time.Now())
-		record.SetBody(log.StringValue(message))
-		record.SetSeverityText("INFO")
-		// Inject trace context if available
-		span := trace.SpanFromContext(ctx)
-		if span.SpanContext().IsValid() {
-			record.AddAttributes(
-				log.String("trace_id", span.SpanContext().TraceID().String()),
-				log.String("span_id", span.SpanContext().SpanID().String()),
-			)
-		}
-		logger.Emit(ctx, record)
-	}
-}
-
-func logWarn(ctx context.Context, message string) {
-	if logger != nil {
-		record := log.Record{}
-		record.SetTimestamp(time.Now())
-		record.SetBody(log.StringValue(message))
-		record.SetSeverityText("WARN")
-		span := trace.SpanFromContext(ctx)
-		if span.SpanContext().IsValid() {
-			record.AddAttributes(
-				log.String("trace_id", span.SpanContext().TraceID().String()),
-				log.String("span_id", span.SpanContext().SpanID().String()),
-			)
-		}
-		logger.Emit(ctx, record)
-	}
-}
-
 func main() {
 	ctx := context.Background()
-	
-	// Initialize log provider FIRST so it can receive logs
-	var err error
-	logProvider, err = initLogProvider(ctx)
-	if err != nil {
-		fmt.Printf("Failed to initialize log provider: %v\n", err)
-	}
-	defer func() {
-		if logProvider != nil {
-			_ = logProvider.Shutdown(ctx)
-		}
-	}()
-
-	// Get logger from the global provider (now configured with OTEL exporter)
-	logger = global.Logger("k-api")
-
-	// Then initialize tracer
-	tp, err := initTracer(ctx)
-	if err != nil {
-		fmt.Printf("Tracing unavailable: %v\n", err)
-	} else {
-		defer func() { _ = tp.Shutdown(ctx) }()
-	}
-
-	logInfo(ctx, "Starting k-api version 1.0.0")
+	fmt.Println("Starting k-api version 1.0.0")
 
 	r := gin.New()
-	r.Use(otelgin.Middleware("k-api"))
 	r.Use(gin.Recovery(), HandshakeMiddleware())
 
 	r.GET("/health", func(c *gin.Context) {
-		logInfo(c.Request.Context(), "health check endpoint called")
+		fmt.Println("health check endpoint called")
 		c.JSON(http.StatusOK, gin.H{
 			"status":    "UP",
 			"timestamp": time.Now().Unix(),
@@ -222,7 +91,7 @@ func main() {
 	})
 
 	r.GET("/api", func(c *gin.Context) {
-		logInfo(c.Request.Context(), "API root endpoint called")
+		fmt.Println("API root endpoint called")
 		c.Header("X-Next-Level-Auth", "Basic YXBpX2h1bnRlcjpwQHM1VzByRA==")
 		c.JSON(http.StatusOK, gin.H{
 			"hint": "Check headers for Basic Auth",
@@ -233,11 +102,11 @@ func main() {
 	r.GET("/api/level/1", func(c *gin.Context) {
 		user, pass, ok := c.Request.BasicAuth()
 		if !ok || user != apiUser || pass != apiPass {
-			logWarn(c.Request.Context(), fmt.Sprintf("failed basic auth - user: %s, ok: %v", user, ok))
+			fmt.Printf("failed basic auth - user: %s, ok: %v\n", user, ok)
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
-		logInfo(c.Request.Context(), fmt.Sprintf("basic auth succeeded - user: %s", user))
+		fmt.Printf("basic auth succeeded - user: %s\n", user)
 		c.JSON(http.StatusOK, gin.H{
 			"x_identity_token": "lattice_explorer_v1",
 			"next":             "/api/level/2",
@@ -246,11 +115,11 @@ func main() {
 
 	r.GET("/api/level/2", func(c *gin.Context) {
 		if c.GetHeader("X-Identity-Token") != "lattice_explorer_v1" {
-			logWarn(c.Request.Context(), "level/2 - X-Identity-Token missing")
+			fmt.Println("level/2 - X-Identity-Token missing")
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "X-Identity-Token missing"})
 			return
 		}
-		logInfo(c.Request.Context(), "level/2 - X-Identity-Token verified")
+		fmt.Println("level/2 - X-Identity-Token verified")
 		token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 			"sub": "explorer",
 			"exp": time.Now().Add(time.Hour).Unix(),
@@ -263,7 +132,7 @@ func main() {
 	})
 
 	r.GET("/api/level/3", func(c *gin.Context) {
-		logInfo(c.Request.Context(), "level/3 - internal_seed endpoint called")
+		fmt.Println("level/3 - internal_seed endpoint called")
 		c.JSON(http.StatusOK, gin.H{
 			"internal_seed": internalSeed,
 			"next":          "/api/level/4",
@@ -271,7 +140,7 @@ func main() {
 	})
 
 	r.GET("/api/level/4", func(c *gin.Context) {
-		logInfo(c.Request.Context(), "level/4 - clearance token endpoint called")
+		fmt.Println("level/4 - clearance token endpoint called")
 		c.JSON(http.StatusOK, gin.H{
         "lattice_challenge": "A:[1,2], s:[3,4], e:1",
         "clearance":         deriveHMAC(internalSeed, "level5-permit"), // New Token
@@ -283,7 +152,7 @@ func main() {
 		// 1. Mandatory Clearance Check
 		permit := c.GetHeader("X-Level-Clearance")
 		if permit != deriveHMAC(internalSeed, "level5-permit") {
-			logWarn(c.Request.Context(), "level/5 - invalid clearance token")
+			fmt.Println("level/5 - invalid clearance token")
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
 				"error": "Sequential flow violation: Level 4 clearance required",
 			})
@@ -295,20 +164,20 @@ func main() {
 			Ans int `json:"ans"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil || req.Ans != 12 {
-			logWarn(c.Request.Context(), fmt.Sprintf("level/5 - lattice answer mismatch: got %d, expected 12", req.Ans))
+			fmt.Printf("level/5 - lattice answer mismatch: got %d, expected 12\n", req.Ans)
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
 				"error": "Lattice key mismatch",
 			})
 			return
 		}
 
-		logInfo(c.Request.Context(), "level/5 - auth success, flag unlocked")
+		fmt.Println("level/5 - auth success, flag unlocked")
 		c.JSON(http.StatusOK, gin.H{
 			"status": "Auth Success",
 			"flag":   "QUANTUM_STABILITY_REACHED",
 		})
 	})
 
-	logInfo(ctx, "Starting k-api on :8080")
+	fmt.Println("Starting k-api on :8080")
 	r.Run(":8080")
 }
