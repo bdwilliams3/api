@@ -90,7 +90,7 @@ spec:
       automountServiceAccountToken: false
       containers:
       - name: k-api
-        image: ghcr.io/bdwilliams3/k-api:master-1773500722-cb3931f # {"$imagepolicy": "flux-system:k-api"}
+        image: ghcr.io/bdwilliams3/k-api:master-1773500835-21c4429 # {"$imagepolicy": "flux-system:k-api"}
         imagePullPolicy: IfNotPresent
         env:
         - name: INTERNAL_SEED
