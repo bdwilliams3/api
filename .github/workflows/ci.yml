@@ -9,6 +9,7 @@ on:
       - 'go.mod'
       - 'go.sum'
       - 'Dockerfile'
+      - 'helm/**'
 
 env:
   REGISTRY: ghcr.io

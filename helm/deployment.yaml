@@ -133,3 +133,46 @@ spec:
     protocol: TCP
     port: 8080
     targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gemini-mcp
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gemini-mcp
+  template:
+    metadata:
+      labels:
+        app: gemini-mcp
+        sidecar.istio.io/inject: "true"
+    spec:
+      containers:
+      - name: mcp-server
+        image: node:20-alpine
+        stdin: true
+        tty: true
+        command: ["npx", "-y", "@modelcontextprotocol/server-google-gemini"]
+        env:
+        - name: GEMINI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: gemini-credentials
+              key: GEMINI_API_KEY
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gemini-mcp
+  namespace: default
+spec:
+  selector:
+    app: gemini-mcp
+  ports:
+  - name: http
+    protocol: TCP
+    port: 8080
+    targetPort: 8080
