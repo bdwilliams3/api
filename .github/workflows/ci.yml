@@ -98,18 +98,16 @@ jobs:
     concurrency:
       group: production-deploy
       cancel-in-progress: false
-    permissions:
-      contents: read
+    # No token and no source checkout: deploy only pulls the already-built
+    # public image and restarts the container using the compose file that
+    # lives ONLY on the host. A malicious docker-compose.yml in a commit
+    # cannot mount host paths or run arbitrary images.
+    permissions: {}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Deploy k-api container
         shell: powershell
         run: |
-          $deployDir = 'C:\Users\bdwil\k-api-deploy'
-          Copy-Item -Path "$env:GITHUB_WORKSPACE\docker-compose.yml" -Destination "$deployDir\docker-compose.yml" -Force
-          Set-Location $deployDir
+          Set-Location 'C:\Users\bdwil\k-api-deploy'
           docker compose pull k-api
           docker compose up -d --remove-orphans --no-deps k-api
           docker image prune -f
