@@ -7,7 +7,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/k-api
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   security-scan-and-build:
@@ -86,7 +86,7 @@ jobs:
       - name: Delete old image tags
         uses: actions/delete-package-versions@v5
         with:
-          package-name: k-api
+          package-name: api
           package-type: container
           min-versions-to-keep: 3
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -97,9 +97,18 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+      packages: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        shell: powershell
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_PAT: ${{ github.token }}
+        run: |
+          $env:GHCR_PAT | docker login ghcr.io -u $env:GHCR_USER --password-stdin
 
       - name: Deploy k-api container
         shell: powershell

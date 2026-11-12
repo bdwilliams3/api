@@ -1,6 +1,6 @@
 services:
   k-api:
-    image: ghcr.io/bdwilliams3/k-api:latest
+    image: ghcr.io/bdwilliams3/api:latest
     restart: unless-stopped
     environment:
       INTERNAL_SEED: ${INTERNAL_SEED}
