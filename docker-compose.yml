@@ -2,6 +2,11 @@ services:
   k-api:
     image: ghcr.io/bdwilliams3/api:latest
     restart: unless-stopped
+    # The Go binary never writes to disk, so lock the root filesystem.
+    read_only: true
+    # Cap CPU/memory so a DoS against the challenge can't starve the host.
+    cpus: '0.5'
+    mem_limit: 128m
     environment:
       INTERNAL_SEED: ${INTERNAL_SEED}
       API_USER: ${API_USER:-api_hunter}
