@@ -20,8 +20,6 @@ const (
 // Config holds all runtime configuration loaded from the environment.
 type Config struct {
 	InternalSeed string
-	APIUser      string
-	APIPass      string
 	JWTSecret2   []byte // signs the level-2 JWT (validates level 3)
 	JWTSecret11  []byte // signs the OAuth access token (validates level 11)
 }
@@ -44,16 +42,6 @@ func loadConfig() Config {
 	c.InternalSeed = strings.TrimSpace(os.Getenv("INTERNAL_SEED"))
 	if c.InternalSeed == "" {
 		c.InternalSeed = hex.EncodeToString(randBytes(64))
-	}
-
-	c.APIUser = os.Getenv("API_USER")
-	if c.APIUser == "" {
-		c.APIUser = "api_hunter"
-	}
-
-	c.APIPass = os.Getenv("API_PASS")
-	if c.APIPass == "" {
-		c.APIPass = "p@s5W0rD"
 	}
 
 	c.JWTSecret2 = deriveBytes(c.InternalSeed, "jwt-level2-v1", 32)

@@ -9,8 +9,6 @@ services:
     mem_limit: 128m
     environment:
       INTERNAL_SEED: ${INTERNAL_SEED}
-      API_USER: ${API_USER:-api_hunter}
-      API_PASS: ${API_PASS}
     # Bound to localhost only — public traffic reaches it via the native
     # cloudflared Windows service -> http://localhost:8080.
     ports:

@@ -113,13 +113,3 @@ func RequireJWT(secret []byte, requiredScope string) gin.HandlerFunc {
 	}
 }
 
-func RequireHMAC() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		sig := c.GetHeader("X-HMAC-Signature")
-		if !ctEqual(sig, deriveHMAC(cfg.InternalSeed, "level4-access")) {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "HMAC signature mismatch"})
-			return
-		}
-		c.Next()
-	}
-}

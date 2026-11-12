@@ -18,7 +18,7 @@ func registerRoutes(r *gin.Engine) {
 	r.GET("/api/level/1", handleLevel1)
 	r.GET("/api/level/2", handleLevel2)
 	r.GET("/api/level/3", RequireJWT(cfg.JWTSecret2, ""), handleLevel3)
-	r.GET("/api/level/4", RequireHMAC(), handleLevel4)
+	r.GET("/api/level/4", handleLevel4)
 	r.POST("/api/level/5", handleLevel5)
 	r.POST("/api/level/6", handleLevel6)
 	r.POST("/api/level/7", handleLevel7)
@@ -38,30 +38,55 @@ func handleHealth(c *gin.Context) {
 }
 
 func handleAPI(c *gin.Context) {
-	authHint := base64.StdEncoding.EncodeToString([]byte(cfg.APIUser + ":" + cfg.APIPass))
+	sessionID := hex.EncodeToString(randBytes(16))
+	basicUser := "api_" + hex.EncodeToString(randBytes(4))
+	basicPass := hex.EncodeToString(randBytes(12))
+	sess := &sessionState{
+		createdAt: time.Now(),
+		basicUser: basicUser,
+		basicPass: basicPass,
+	}
+	st.mu.Lock()
+	st.sessions[sessionID] = sess
+	st.mu.Unlock()
+
+	authHint := base64.StdEncoding.EncodeToString([]byte(basicUser + ":" + basicPass))
 	c.Header("X-Next-Level-Auth", "Basic "+authHint)
 	c.JSON(http.StatusOK, gin.H{
-		"next": "/api/level/1",
+		"session": sessionID,
+		"next":    "/api/level/1",
 	})
 }
 
 func handleLevel1(c *gin.Context) {
+	sess := getSession(c.GetHeader("X-Session"))
+	if sess == nil {
+		c.Header("WWW-Authenticate", "Basic realm=\"k-api\"")
+		logFail(c, 1, "no active session")
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
 	user, pass, ok := c.Request.BasicAuth()
-	if !ok || user != cfg.APIUser || pass != cfg.APIPass {
+	if !ok || !ctEqual(user, sess.basicUser) || !ctEqual(pass, sess.basicPass) {
 		c.Header("WWW-Authenticate", "Basic realm=\"k-api\"")
 		logFail(c, 1, "invalid credentials")
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
+	identityToken := hex.EncodeToString(randBytes(16))
+	st.mu.Lock()
+	sess.identityToken = identityToken
+	st.mu.Unlock()
 	logPass(c, 1)
 	c.JSON(http.StatusOK, gin.H{
-		"x_identity_token": "lattice_explorer_v1",
+		"x_identity_token": identityToken,
 		"next":             "/api/level/2",
 	})
 }
 
 func handleLevel2(c *gin.Context) {
-	if c.GetHeader("X-Identity-Token") != "lattice_explorer_v1" {
+	sess := getSession(c.GetHeader("X-Session"))
+	if sess == nil || len(sess.identityToken) == 0 || !ctEqual(c.GetHeader("X-Identity-Token"), sess.identityToken) {
 		logFail(c, 2, "missing identity token")
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "X-Identity-Token missing"})
 		return
@@ -79,42 +104,69 @@ func handleLevel2(c *gin.Context) {
 }
 
 func handleLevel3(c *gin.Context) {
+	sess := getSession(c.GetHeader("X-Session"))
+	if sess == nil {
+		logFail(c, 3, "no active session")
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "No active session"})
+		return
+	}
+	level4Key := hex.EncodeToString(randBytes(16))
+	st.mu.Lock()
+	sess.level4Key = level4Key
+	st.mu.Unlock()
 	logPass(c, 3)
-	// Only the level-4 HMAC key is handed over — not the root seed — so the
-	// remaining levels must be solved one by one.
 	c.JSON(http.StatusOK, gin.H{
-		"level4_key": deriveHMAC(cfg.InternalSeed, "level4-access"),
+		"level4_key": level4Key,
 		"next":       "/api/level/4",
 	})
 }
 
 func handleLevel4(c *gin.Context) {
+	sess := getSession(c.GetHeader("X-Session"))
+	if sess == nil || len(sess.level4Key) == 0 {
+		logFail(c, 4, "no active session")
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "No active session"})
+		return
+	}
+	if !ctEqual(c.GetHeader("X-HMAC-Signature"), sess.level4Key) {
+		logFail(c, 4, "HMAC signature mismatch")
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "HMAC signature mismatch"})
+		return
+	}
+	clearance := hex.EncodeToString(randBytes(16))
+	st.mu.Lock()
+	sess.clearance = clearance
+	st.mu.Unlock()
 	logPass(c, 4)
 	c.JSON(http.StatusOK, gin.H{
 		"lattice_challenge": "A:[1,2], s:[3,4], e:1",
-		"clearance":         deriveHMAC(cfg.InternalSeed, "level5-permit"),
+		"clearance":         clearance,
 		"next":              "/api/level/5",
 	})
 }
 
 func handleLevel5(c *gin.Context) {
-	permit := c.GetHeader("X-Level-Clearance")
-	clearance := deriveHMAC(cfg.InternalSeed, "level5-permit")
-	if !ctEqual(permit, clearance) {
+	var req struct {
+		Session string `json:"session"`
+		Ans     int    `json:"ans"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "bad request"})
+		return
+	}
+	sess := getSession(req.Session)
+	if sess == nil || len(sess.clearance) == 0 || !ctEqual(c.GetHeader("X-Level-Clearance"), sess.clearance) {
 		logFail(c, 5, "missing clearance")
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Sequential flow violation: Level 4 clearance required"})
 		return
 	}
-	var req struct {
-		Ans int `json:"ans"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil || req.Ans != 12 {
+	if req.Ans != 12 {
 		logFail(c, 5, "lattice answer mismatch")
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Lattice key mismatch"})
 		return
 	}
 
-	key := deriveBytes(clearance, "aes-gcm-key-v1", 32)
+	key := deriveBytes(sess.clearance, "aes-gcm-key-v1", 32)
 	plain := randBytes(32)
 	nonce, ct, err := aesGCMEncrypt(key, plain)
 	if err != nil {
@@ -122,20 +174,14 @@ func handleLevel5(c *gin.Context) {
 		return
 	}
 
-	sessionID := hex.EncodeToString(randBytes(16))
-	sess := &sessionState{
-		createdAt:   time.Now(),
-		aesTokenHex: hex.EncodeToString(plain),
-	}
 	st.mu.Lock()
-	st.sessions[sessionID] = sess
+	sess.aesTokenHex = hex.EncodeToString(plain)
 	st.mu.Unlock()
 
 	logPass(c, 5)
 	c.JSON(http.StatusOK, gin.H{
-		"status":  "Auth Success",
-		"session": sessionID,
-		"next":    "/api/level/6",
+		"status": "Auth Success",
+		"next":   "/api/level/6",
 		"aes": gin.H{
 			"nonce":      base64.StdEncoding.EncodeToString(nonce),
 			"ciphertext": base64.StdEncoding.EncodeToString(ct),
