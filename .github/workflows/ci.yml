@@ -111,7 +111,8 @@ jobs:
           Copy-Item -Path "$env:GITHUB_WORKSPACE\docker-compose.yml" -Destination "$deployDir\docker-compose.yml" -Force
           Set-Location $deployDir
           docker compose pull k-api
-          docker compose up -d --no-deps k-api
+          docker compose up -d --remove-orphans --no-deps k-api
+          docker image prune -f
           Start-Sleep -Seconds 4
           $r = Invoke-WebRequest -Uri 'http://127.0.0.1:8080/health' -UseBasicParsing -TimeoutSec 15
           Write-Output "health check: $($r.StatusCode) $($r.Content)"
