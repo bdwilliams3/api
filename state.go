@@ -6,11 +6,13 @@ import (
 )
 
 type sessionState struct {
-	createdAt   time.Time
-	aesTokenHex string
-	edMsg       []byte
-	kdfSalt     []byte
-	totpUsed    string
+	createdAt    time.Time
+	aesTokenHex  string
+	edMsg        []byte
+	kdfSalt      []byte
+	totpSalt     []byte
+	totpUsed     string
+	level9Cleared bool
 
 	lweA      [][]int64
 	lweB      []int64

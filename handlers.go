@@ -256,6 +256,11 @@ func handleLevel8(c *gin.Context) {
 		return
 	}
 
+	salt := randBytes(16)
+	st.mu.Lock()
+	sess.totpSalt = salt
+	st.mu.Unlock()
+
 	time.Sleep(jitterMs(150))
 	logPass(c, 8)
 	c.JSON(http.StatusOK, gin.H{
@@ -265,6 +270,7 @@ func handleLevel8(c *gin.Context) {
 			"digits":    8,
 			"algorithm": "sha256",
 		},
+		"totp_salt": base64.StdEncoding.EncodeToString(salt),
 	})
 }
 
@@ -278,16 +284,17 @@ func handleLevel9(c *gin.Context) {
 		return
 	}
 	sess := getSession(req.Session)
-	if sess == nil {
-		logFail(c, 9, "no active session")
-		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "No active session"})
+	if sess == nil || len(sess.totpSalt) == 0 {
+		logFail(c, 9, "no active challenge")
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "No active challenge"})
 		return
 	}
-	totpSecret := deriveBytes(kdfPassword(sess), "totp-secret-v1", 20)
+	material := kdfPassword(sess) + hex.EncodeToString(sess.totpSalt)
+	totpSecret := deriveBytes(material, "totp-secret-v1", 20)
 	baseCounter := time.Now().Unix() / 60
 	ok := false
 	for _, delta := range []int64{-1, 0, 1} {
-		if totpCodeAt(totpSecret, 60, 8, sha256.New, baseCounter+delta) == req.Code {
+		if ctEqual(totpCodeAt(totpSecret, 60, 8, sha256.New, baseCounter+delta), req.Code) {
 			ok = true
 			break
 		}
@@ -308,6 +315,8 @@ func handleLevel9(c *gin.Context) {
 		return
 	}
 	sess.totpUsed = req.Code
+	sess.level9Cleared = true
+	permit := deriveHMAC(sess.aesTokenHex+hex.EncodeToString(sess.totpSalt), "level10-permit")
 	st.mu.Unlock()
 
 	time.Sleep(jitterMs(150))
@@ -319,6 +328,7 @@ func handleLevel9(c *gin.Context) {
 			"authorize": "/api/oauth/authorize",
 			"token":     "/api/oauth/token",
 		},
+		"level10_permit": permit,
 	})
 }
 
@@ -326,6 +336,22 @@ func handleOAuthAuthorize(c *gin.Context) {
 	clientID := c.Query("client_id")
 	challenge := c.Query("code_challenge")
 	state := c.Query("state")
+	sessionID := c.Query("session")
+	permit := c.GetHeader("X-Level-Clearance")
+
+	sess := getSession(sessionID)
+	if sess == nil || len(sess.totpSalt) == 0 {
+		logFail(c, 10, "level 9 clearance required")
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Level 9 clearance required"})
+		return
+	}
+	want := deriveHMAC(sess.aesTokenHex+hex.EncodeToString(sess.totpSalt), "level10-permit")
+	if !ctEqual(permit, want) {
+		logFail(c, 10, "level 9 clearance required")
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Level 9 clearance required"})
+		return
+	}
+
 	if clientID != oauthClient || challenge == "" {
 		logFail(c, 10, "invalid authorize request")
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid authorize request"})
@@ -401,7 +427,7 @@ func handleLevel11(c *gin.Context) {
 		return
 	}
 	sess := getSession(req.Session)
-	if sess == nil {
+	if sess == nil || !sess.level9Cleared {
 		logFail(c, 11, "no active session")
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "No active session"})
 		return
@@ -447,7 +473,7 @@ func handleLevel11Solve(c *gin.Context) {
 		return
 	}
 	sess := getSession(req.Session)
-	if sess == nil || sess.lweN == 0 {
+	if sess == nil || !sess.level9Cleared || sess.lweN == 0 {
 		logFail(c, 11, "no active challenge")
 		time.Sleep(time.Second + jitterMs(500))
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "No active challenge"})
