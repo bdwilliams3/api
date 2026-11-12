@@ -97,18 +97,9 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
-      packages: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Log in to GHCR
-        shell: powershell
-        env:
-          GHCR_USER: ${{ github.actor }}
-          GHCR_PAT: ${{ github.token }}
-        run: |
-          $env:GHCR_PAT | docker login ghcr.io -u $env:GHCR_USER --password-stdin
 
       - name: Deploy k-api container
         shell: powershell
