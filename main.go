@@ -68,7 +68,11 @@ func main() {
 	fmt.Printf("Starting k-api version %s\n", version)
 
 	gin.SetMode(gin.ReleaseMode)
+	// cloudflared connects from localhost and forwards Cloudflare's
+	// X-Forwarded-For header, so trust it to obtain real client IPs for
+	// per-client rate limiting and logging.
 	r := gin.New()
+	_ = r.SetTrustedProxies([]string{"127.0.0.1", "::1"})
 	r.Use(gin.Recovery(), rateLimitMiddleware())
 	registerRoutes(r)
 
