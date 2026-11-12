@@ -4,11 +4,6 @@ on:
   push:
     branches:
       - master
-    paths:
-      - '**.go'
-      - 'go.mod'
-      - 'go.sum'
-      - 'Dockerfile'
 
 env:
   REGISTRY: ghcr.io
@@ -72,7 +67,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           format: 'table'
@@ -95,3 +90,25 @@ jobs:
           package-type: container
           min-versions-to-keep: 3
           token: ${{ secrets.CR_TOKEN }}
+
+  deploy:
+    needs: security-scan-and-build
+    runs-on: [self-hosted, api]
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy k-api container
+        shell: powershell
+        run: |
+          $deployDir = 'C:\Users\bdwil\api'
+          Copy-Item -Path "$env:GITHUB_WORKSPACE\docker-compose.yml" -Destination "$deployDir\docker-compose.yml" -Force
+          Set-Location $deployDir
+          docker compose pull k-api
+          docker compose up -d --no-deps k-api
+          Start-Sleep -Seconds 4
+          $r = Invoke-WebRequest -Uri 'http://127.0.0.1:8080/health' -UseBasicParsing -TimeoutSec 15
+          Write-Output "health check: $($r.StatusCode) $($r.Content)"

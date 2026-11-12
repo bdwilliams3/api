@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"net/http"
 	"os"
@@ -90,7 +91,10 @@ func main() {
 
 	r.GET("/api", func(c *gin.Context) {
 		fmt.Println("API root endpoint called")
-		c.Header("X-Next-Level-Auth", "Basic YXBpX2h1bnRlcjpwQHM1VzByRA==")
+		// Derive the basic-auth hint from the injected creds so the game stays
+		// consistent no matter what API_USER/API_PASS are set to.
+		authHint := base64.StdEncoding.EncodeToString([]byte(apiUser + ":" + apiPass))
+		c.Header("X-Next-Level-Auth", "Basic "+authHint)
 		c.JSON(http.StatusOK, gin.H{
 			"hint": "Check headers for Basic Auth",
 			"next": "/api/level/1",

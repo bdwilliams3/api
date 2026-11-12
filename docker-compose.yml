@@ -1,0 +1,12 @@
+services:
+  k-api:
+    image: ghcr.io/bdwilliams3/k-api:latest
+    restart: unless-stopped
+    environment:
+      INTERNAL_SEED: ${INTERNAL_SEED}
+      API_USER: ${API_USER:-api_hunter}
+      API_PASS: ${API_PASS}
+    # Bound to localhost only — public traffic reaches it via the native
+    # cloudflared Windows service -> http://localhost:8080.
+    ports:
+      - "127.0.0.1:8080:8080"

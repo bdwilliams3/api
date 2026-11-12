@@ -1,0 +1,5 @@
+.git
+.github
+helm
+*.md
+.env
