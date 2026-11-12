@@ -85,7 +85,9 @@ func rateLimitMiddleware() gin.HandlerFunc {
 // Auth middlewares
 // ---------------------------------------------------------------------------
 
-func RequireJWT() gin.HandlerFunc {
+// RequireJWT validates a Bearer JWT signed with the given secret and,
+// when requiredScope is non-empty, enforces that the token carries that scope.
+func RequireJWT(secret []byte, requiredScope string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		auth := c.GetHeader("Authorization")
 		if !strings.HasPrefix(auth, "Bearer ") {
@@ -94,11 +96,18 @@ func RequireJWT() gin.HandlerFunc {
 			return
 		}
 		tokenStr := strings.TrimPrefix(auth, "Bearer ")
-		token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) { return cfg.JWTSecret, nil })
+		token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) { return secret, nil })
 		if err != nil || token == nil || !token.Valid {
 			c.Header("WWW-Authenticate", "Bearer")
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid/Expired JWT"})
 			return
+		}
+		if requiredScope != "" {
+			claims, ok := token.Claims.(jwt.MapClaims)
+			if !ok || claims["scope"] != requiredScope {
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Insufficient scope"})
+				return
+			}
 		}
 		c.Next()
 	}
@@ -107,7 +116,7 @@ func RequireJWT() gin.HandlerFunc {
 func RequireHMAC() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sig := c.GetHeader("X-HMAC-Signature")
-		if sig != deriveHMAC(cfg.InternalSeed, "level4-access") {
+		if !ctEqual(sig, deriveHMAC(cfg.InternalSeed, "level4-access")) {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "HMAC signature mismatch"})
 			return
 		}

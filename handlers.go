@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/ed25519"
 	"crypto/sha256"
-	"encoding/base32"
 	"encoding/base64"
 	"encoding/hex"
 	"net/http"
@@ -18,7 +17,7 @@ func registerRoutes(r *gin.Engine) {
 	r.GET("/api", handleAPI)
 	r.GET("/api/level/1", handleLevel1)
 	r.GET("/api/level/2", handleLevel2)
-	r.GET("/api/level/3", RequireJWT(), handleLevel3)
+	r.GET("/api/level/3", RequireJWT(cfg.JWTSecret2, ""), handleLevel3)
 	r.GET("/api/level/4", RequireHMAC(), handleLevel4)
 	r.POST("/api/level/5", handleLevel5)
 	r.POST("/api/level/6", handleLevel6)
@@ -27,7 +26,7 @@ func registerRoutes(r *gin.Engine) {
 	r.POST("/api/level/9", handleLevel9)
 	r.GET("/api/oauth/authorize", handleOAuthAuthorize)
 	r.POST("/api/oauth/token", handleOAuthToken)
-	r.POST("/api/level/11", RequireJWT(), handleLevel11)
+	r.POST("/api/level/11", RequireJWT(cfg.JWTSecret11, "level11"), handleLevel11)
 	r.POST("/api/level/11/solve", handleLevel11Solve)
 }
 
@@ -71,7 +70,7 @@ func handleLevel2(c *gin.Context) {
 		"sub": "explorer",
 		"exp": time.Now().Add(time.Hour).Unix(),
 	})
-	tString, _ := token.SignedString(cfg.JWTSecret)
+	tString, _ := token.SignedString(cfg.JWTSecret2)
 	logPass(c, 2)
 	c.JSON(http.StatusOK, gin.H{
 		"jwt":  tString,
@@ -81,9 +80,11 @@ func handleLevel2(c *gin.Context) {
 
 func handleLevel3(c *gin.Context) {
 	logPass(c, 3)
+	// Only the level-4 HMAC key is handed over — not the root seed — so the
+	// remaining levels must be solved one by one.
 	c.JSON(http.StatusOK, gin.H{
-		"internal_seed": cfg.InternalSeed,
-		"next":          "/api/level/4",
+		"level4_key": deriveHMAC(cfg.InternalSeed, "level4-access"),
+		"next":       "/api/level/4",
 	})
 }
 
@@ -98,7 +99,8 @@ func handleLevel4(c *gin.Context) {
 
 func handleLevel5(c *gin.Context) {
 	permit := c.GetHeader("X-Level-Clearance")
-	if permit != deriveHMAC(cfg.InternalSeed, "level5-permit") {
+	clearance := deriveHMAC(cfg.InternalSeed, "level5-permit")
+	if !ctEqual(permit, clearance) {
 		logFail(c, 5, "missing clearance")
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Sequential flow violation: Level 4 clearance required"})
 		return
@@ -112,7 +114,7 @@ func handleLevel5(c *gin.Context) {
 		return
 	}
 
-	key := deriveBytes(cfg.InternalSeed, "aes-gcm-key-v1", 32)
+	key := deriveBytes(clearance, "aes-gcm-key-v1", 32)
 	plain := randBytes(32)
 	nonce, ct, err := aesGCMEncrypt(key, plain)
 	if err != nil {
@@ -159,8 +161,7 @@ func handleLevel6(c *gin.Context) {
 	}
 
 	msg := randBytes(32)
-	edSeed := deriveBytes(cfg.InternalSeed, "ed25519-seed-v1", 32)
-	priv := ed25519.NewKeyFromSeed(edSeed)
+	priv := ed25519.NewKeyFromSeed(ed25519Seed(sess))
 	pub := priv.Public().(ed25519.PublicKey)
 
 	st.mu.Lock()
@@ -201,8 +202,7 @@ func handleLevel7(c *gin.Context) {
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Invalid signature"})
 		return
 	}
-	edSeed := deriveBytes(cfg.InternalSeed, "ed25519-seed-v1", 32)
-	priv := ed25519.NewKeyFromSeed(edSeed)
+	priv := ed25519.NewKeyFromSeed(ed25519Seed(sess))
 	pub := priv.Public().(ed25519.PublicKey)
 	if !ed25519.Verify(pub, sess.edMsg, sig) {
 		logFail(c, 7, "signature verify failed")
@@ -256,13 +256,11 @@ func handleLevel8(c *gin.Context) {
 		return
 	}
 
-	totpSecret := deriveBytes(cfg.InternalSeed, "totp-secret-v1", 20)
 	time.Sleep(jitterMs(150))
 	logPass(c, 8)
 	c.JSON(http.StatusOK, gin.H{
 		"next": "/api/level/9",
 		"totp": gin.H{
-			"secret":    base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(totpSecret),
 			"period":    60,
 			"digits":    8,
 			"algorithm": "sha256",
@@ -285,7 +283,7 @@ func handleLevel9(c *gin.Context) {
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "No active session"})
 		return
 	}
-	totpSecret := deriveBytes(cfg.InternalSeed, "totp-secret-v1", 20)
+	totpSecret := deriveBytes(kdfPassword(sess), "totp-secret-v1", 20)
 	baseCounter := time.Now().Unix() / 60
 	ok := false
 	for _, delta := range []int64{-1, 0, 1} {
@@ -384,7 +382,7 @@ func handleOAuthToken(c *gin.Context) {
 		"scope": "level11",
 		"exp":   time.Now().Add(10 * time.Minute).Unix(),
 	})
-	signed, _ := token.SignedString(cfg.JWTSecret)
+	signed, _ := token.SignedString(cfg.JWTSecret11)
 	time.Sleep(jitterMs(150))
 	logPass(c, 10)
 	c.JSON(http.StatusOK, gin.H{

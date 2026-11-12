@@ -191,11 +191,16 @@ func encodeS(s []int64) string {
 	return strings.Join(parts, ",")
 }
 
+// ed25519Seed derives the Ed25519 key from the AES token the solver recovered
+// at level 6 (not from the root seed), so level 7 can't be skipped.
+func ed25519Seed(sess *sessionState) []byte {
+	return deriveBytes(sess.aesTokenHex, "ed25519-seed-v1", 32)
+}
+
 // kdfPassword is assembled from tokens the solver already holds.
 // Formatting is deliberately exact (hex truncation, RawURLEncoding).
 func kdfPassword(sess *sessionState) string {
-	edSeed := deriveBytes(cfg.InternalSeed, "ed25519-seed-v1", 32)
-	priv := ed25519.NewKeyFromSeed(edSeed)
+	priv := ed25519.NewKeyFromSeed(ed25519Seed(sess))
 	pub := priv.Public().(ed25519.PublicKey)
 	pubB64 := base64.RawURLEncoding.EncodeToString(pub)
 	material := sess.aesTokenHex + "::" + pubB64

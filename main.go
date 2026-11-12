@@ -22,7 +22,8 @@ type Config struct {
 	InternalSeed string
 	APIUser      string
 	APIPass      string
-	JWTSecret    []byte
+	JWTSecret2   []byte // signs the level-2 JWT (validates level 3)
+	JWTSecret11  []byte // signs the OAuth access token (validates level 11)
 }
 
 var cfg Config
@@ -55,7 +56,8 @@ func loadConfig() Config {
 		c.APIPass = "p@s5W0rD"
 	}
 
-	c.JWTSecret = deriveBytes(c.InternalSeed, "jwt-signing-v1", 32)
+	c.JWTSecret2 = deriveBytes(c.InternalSeed, "jwt-level2-v1", 32)
+	c.JWTSecret11 = deriveBytes(c.InternalSeed, "jwt-level11-v1", 32)
 	return c
 }
 
