@@ -8,39 +8,58 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/time/rate"
 )
 
 // ---------------------------------------------------------------------------
-// Rate limiting
+// Rate limiting (token bucket per client IP)
 // ---------------------------------------------------------------------------
 
+type visitor struct {
+	limiter  *rate.Limiter
+	lastSeen time.Time
+}
+
 type rateLimiter struct {
-	mu       sync.Mutex
-	visitors map[string][]time.Time
+	mu      sync.Mutex
+	buckets map[string]*visitor
 }
 
 func newRateLimiter() *rateLimiter {
-	return &rateLimiter{visitors: map[string][]time.Time{}}
+	return &rateLimiter{buckets: map[string]*visitor{}}
 }
 
 func (rl *rateLimiter) allow(key string, limit int, window time.Duration) bool {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	now := time.Now()
-	cutoff := now.Add(-window)
-	var kept []time.Time
-	for _, t := range rl.visitors[key] {
-		if t.After(cutoff) {
-			kept = append(kept, t)
+	v, ok := rl.buckets[key]
+	if !ok {
+		r := rate.Limit(float64(limit) / window.Seconds())
+		v = &visitor{limiter: rate.NewLimiter(r, limit), lastSeen: now}
+		rl.buckets[key] = v
+	}
+	v.lastSeen = now
+	return v.limiter.Allow()
+}
+
+// startReaper removes buckets for clients that have been idle longer than
+// idleTTL, preventing the map from growing without bound.
+func (rl *rateLimiter) startReaper(interval, idleTTL time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for range ticker.C {
+			rl.mu.Lock()
+			cutoff := time.Now().Add(-idleTTL)
+			for k, v := range rl.buckets {
+				if v.lastSeen.Before(cutoff) {
+					delete(rl.buckets, k)
+				}
+			}
+			rl.mu.Unlock()
 		}
-	}
-	if len(kept) >= limit {
-		rl.visitors[key] = kept
-		return false
-	}
-	kept = append(kept, now)
-	rl.visitors[key] = kept
-	return true
+	}()
 }
 
 var rl = newRateLimiter()
@@ -49,11 +68,11 @@ func rateLimitMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ip := c.ClientIP()
 		path := c.Request.URL.Path
-		limit, window := 120, time.Minute
+		limit, window, group := 120, time.Minute, "general"
 		if strings.HasPrefix(path, "/api/level/") || strings.HasPrefix(path, "/api/oauth/") {
-			limit, window = 30, time.Minute
+			limit, window, group = 30, time.Minute, "challenge"
 		}
-		if !rl.allow(ip, limit, window) {
+		if !rl.allow(ip+":"+group, limit, window) {
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "rate limited"})
 			return
 		}

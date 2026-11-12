@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -49,6 +50,9 @@ func loadConfig() Config {
 
 func main() {
 	cfg = loadConfig()
+
+	rl.startReaper(5*time.Minute, time.Hour)
+	startStateReaper()
 
 	fmt.Printf("Starting k-api version %s\n", version)
 

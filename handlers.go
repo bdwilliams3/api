@@ -257,7 +257,8 @@ func handleLevel9(c *gin.Context) {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "bad request"})
 		return
 	}
-	if getSession(req.Session) == nil {
+	sess := getSession(req.Session)
+	if sess == nil {
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "No active session"})
 		return
 	}
@@ -275,6 +276,16 @@ func handleLevel9(c *gin.Context) {
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Invalid code"})
 		return
 	}
+
+	st.mu.Lock()
+	if sess.totpUsed == req.Code {
+		st.mu.Unlock()
+		time.Sleep(time.Second)
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "TOTP replay detected"})
+		return
+	}
+	sess.totpUsed = req.Code
+	st.mu.Unlock()
 
 	c.JSON(http.StatusOK, gin.H{
 		"next": "/api/oauth/authorize",

@@ -10,6 +10,7 @@ type sessionState struct {
 	aesTokenHex string
 	edMsg       []byte
 	kdfSalt     []byte
+	totpUsed    string
 
 	lweA      [][]int64
 	lweB      []int64
@@ -50,4 +51,28 @@ func getSession(id string) *sessionState {
 		return nil
 	}
 	return s
+}
+
+// startStateReaper periodically drops expired sessions and OAuth codes so
+// abandoned flows do not leak memory.
+func startStateReaper() {
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			now := time.Now()
+			st.mu.Lock()
+			for k, s := range st.sessions {
+				if now.Sub(s.createdAt) > time.Hour {
+					delete(st.sessions, k)
+				}
+			}
+			for k, oc := range st.oauthCodes {
+				if now.After(oc.expires) {
+					delete(st.oauthCodes, k)
+				}
+			}
+			st.mu.Unlock()
+		}
+	}()
 }
