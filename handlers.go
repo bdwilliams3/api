@@ -49,9 +49,12 @@ func handleAPI(c *gin.Context) {
 func handleLevel1(c *gin.Context) {
 	user, pass, ok := c.Request.BasicAuth()
 	if !ok || user != cfg.APIUser || pass != cfg.APIPass {
+		c.Header("WWW-Authenticate", "Basic realm=\"k-api\"")
+		logFail(c, 1, "invalid credentials")
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
+	logPass(c, 1)
 	c.JSON(http.StatusOK, gin.H{
 		"x_identity_token": "lattice_explorer_v1",
 		"next":             "/api/level/2",
@@ -60,6 +63,7 @@ func handleLevel1(c *gin.Context) {
 
 func handleLevel2(c *gin.Context) {
 	if c.GetHeader("X-Identity-Token") != "lattice_explorer_v1" {
+		logFail(c, 2, "missing identity token")
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "X-Identity-Token missing"})
 		return
 	}
@@ -68,6 +72,7 @@ func handleLevel2(c *gin.Context) {
 		"exp": time.Now().Add(time.Hour).Unix(),
 	})
 	tString, _ := token.SignedString(cfg.JWTSecret)
+	logPass(c, 2)
 	c.JSON(http.StatusOK, gin.H{
 		"jwt":  tString,
 		"next": "/api/level/3",
@@ -75,6 +80,7 @@ func handleLevel2(c *gin.Context) {
 }
 
 func handleLevel3(c *gin.Context) {
+	logPass(c, 3)
 	c.JSON(http.StatusOK, gin.H{
 		"internal_seed": cfg.InternalSeed,
 		"next":          "/api/level/4",
@@ -82,6 +88,7 @@ func handleLevel3(c *gin.Context) {
 }
 
 func handleLevel4(c *gin.Context) {
+	logPass(c, 4)
 	c.JSON(http.StatusOK, gin.H{
 		"lattice_challenge": "A:[1,2], s:[3,4], e:1",
 		"clearance":         deriveHMAC(cfg.InternalSeed, "level5-permit"),
@@ -92,6 +99,7 @@ func handleLevel4(c *gin.Context) {
 func handleLevel5(c *gin.Context) {
 	permit := c.GetHeader("X-Level-Clearance")
 	if permit != deriveHMAC(cfg.InternalSeed, "level5-permit") {
+		logFail(c, 5, "missing clearance")
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Sequential flow violation: Level 4 clearance required"})
 		return
 	}
@@ -99,6 +107,7 @@ func handleLevel5(c *gin.Context) {
 		Ans int `json:"ans"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil || req.Ans != 12 {
+		logFail(c, 5, "lattice answer mismatch")
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Lattice key mismatch"})
 		return
 	}
@@ -120,6 +129,7 @@ func handleLevel5(c *gin.Context) {
 	st.sessions[sessionID] = sess
 	st.mu.Unlock()
 
+	logPass(c, 5)
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "Auth Success",
 		"session": sessionID,
@@ -142,7 +152,8 @@ func handleLevel6(c *gin.Context) {
 	}
 	sess := getSession(req.Session)
 	if sess == nil || !ctEqual(req.Token, sess.aesTokenHex) {
-		time.Sleep(time.Second)
+		logFail(c, 6, "invalid AES token")
+		time.Sleep(time.Second + jitterMs(500))
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Invalid token"})
 		return
 	}
@@ -156,6 +167,8 @@ func handleLevel6(c *gin.Context) {
 	sess.edMsg = msg
 	st.mu.Unlock()
 
+	time.Sleep(jitterMs(150))
+	logPass(c, 6)
 	c.JSON(http.StatusOK, gin.H{
 		"next": "/api/level/7",
 		"ed25519": gin.H{
@@ -176,13 +189,15 @@ func handleLevel7(c *gin.Context) {
 	}
 	sess := getSession(req.Session)
 	if sess == nil || len(sess.edMsg) == 0 {
-		time.Sleep(time.Second)
+		logFail(c, 7, "no active challenge")
+		time.Sleep(time.Second + jitterMs(500))
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "No active challenge"})
 		return
 	}
 	sig, err := base64.StdEncoding.DecodeString(req.Signature)
 	if err != nil {
-		time.Sleep(time.Second)
+		logFail(c, 7, "signature decode failed")
+		time.Sleep(time.Second + jitterMs(500))
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Invalid signature"})
 		return
 	}
@@ -190,7 +205,8 @@ func handleLevel7(c *gin.Context) {
 	priv := ed25519.NewKeyFromSeed(edSeed)
 	pub := priv.Public().(ed25519.PublicKey)
 	if !ed25519.Verify(pub, sess.edMsg, sig) {
-		time.Sleep(time.Second)
+		logFail(c, 7, "signature verify failed")
+		time.Sleep(time.Second + jitterMs(500))
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Invalid signature"})
 		return
 	}
@@ -201,6 +217,8 @@ func handleLevel7(c *gin.Context) {
 	sess.kdfSalt = salt
 	st.mu.Unlock()
 
+	time.Sleep(jitterMs(150))
+	logPass(c, 7)
 	c.JSON(http.StatusOK, gin.H{
 		"next": "/api/level/8",
 		"kdf": gin.H{
@@ -224,19 +242,23 @@ func handleLevel8(c *gin.Context) {
 	}
 	sess := getSession(req.Session)
 	if sess == nil || len(sess.kdfSalt) == 0 {
-		time.Sleep(time.Second)
+		logFail(c, 8, "no active challenge")
+		time.Sleep(time.Second + jitterMs(500))
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "No active challenge"})
 		return
 	}
 	got := pbkdf2SHA256([]byte(req.Password), sess.kdfSalt, 120000, 32)
 	want := pbkdf2SHA256([]byte(kdfPassword(sess)), sess.kdfSalt, 120000, 32)
 	if !ctEqual(hex.EncodeToString(got), hex.EncodeToString(want)) {
-		time.Sleep(time.Second)
+		logFail(c, 8, "invalid password")
+		time.Sleep(time.Second + jitterMs(500))
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Invalid password"})
 		return
 	}
 
 	totpSecret := deriveBytes(cfg.InternalSeed, "totp-secret-v1", 20)
+	time.Sleep(jitterMs(150))
+	logPass(c, 8)
 	c.JSON(http.StatusOK, gin.H{
 		"next": "/api/level/9",
 		"totp": gin.H{
@@ -259,6 +281,7 @@ func handleLevel9(c *gin.Context) {
 	}
 	sess := getSession(req.Session)
 	if sess == nil {
+		logFail(c, 9, "no active session")
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "No active session"})
 		return
 	}
@@ -272,7 +295,8 @@ func handleLevel9(c *gin.Context) {
 		}
 	}
 	if !ok {
-		time.Sleep(2 * time.Second)
+		logFail(c, 9, "invalid TOTP code")
+		time.Sleep(2*time.Second + jitterMs(500))
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Invalid code"})
 		return
 	}
@@ -280,13 +304,16 @@ func handleLevel9(c *gin.Context) {
 	st.mu.Lock()
 	if sess.totpUsed == req.Code {
 		st.mu.Unlock()
-		time.Sleep(time.Second)
+		logFail(c, 9, "TOTP replay")
+		time.Sleep(time.Second + jitterMs(500))
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "TOTP replay detected"})
 		return
 	}
 	sess.totpUsed = req.Code
 	st.mu.Unlock()
 
+	time.Sleep(jitterMs(150))
+	logPass(c, 9)
 	c.JSON(http.StatusOK, gin.H{
 		"next": "/api/oauth/authorize",
 		"oauth": gin.H{
@@ -302,6 +329,7 @@ func handleOAuthAuthorize(c *gin.Context) {
 	challenge := c.Query("code_challenge")
 	state := c.Query("state")
 	if clientID != oauthClient || challenge == "" {
+		logFail(c, 10, "invalid authorize request")
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid authorize request"})
 		return
 	}
@@ -328,6 +356,7 @@ func handleOAuthToken(c *gin.Context) {
 		return
 	}
 	if req.GrantType != "authorization_code" || req.ClientID != oauthClient {
+		logFail(c, 10, "invalid token request")
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid token request"})
 		return
 	}
@@ -336,14 +365,16 @@ func handleOAuthToken(c *gin.Context) {
 	delete(st.oauthCodes, req.Code)
 	st.mu.Unlock()
 	if !ok || time.Now().After(oc.expires) {
-		time.Sleep(time.Second)
+		logFail(c, 10, "invalid or expired code")
+		time.Sleep(time.Second + jitterMs(500))
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid or expired code"})
 		return
 	}
 	sum := sha256.Sum256([]byte(req.CodeVerifier))
 	computed := base64.RawURLEncoding.EncodeToString(sum[:])
 	if !ctEqual(computed, oc.challenge) {
-		time.Sleep(time.Second)
+		logFail(c, 10, "PKCE verification failed")
+		time.Sleep(time.Second + jitterMs(500))
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "PKCE verification failed"})
 		return
 	}
@@ -354,6 +385,8 @@ func handleOAuthToken(c *gin.Context) {
 		"exp":   time.Now().Add(10 * time.Minute).Unix(),
 	})
 	signed, _ := token.SignedString(cfg.JWTSecret)
+	time.Sleep(jitterMs(150))
+	logPass(c, 10)
 	c.JSON(http.StatusOK, gin.H{
 		"access_token": signed,
 		"token_type":   "bearer",
@@ -371,6 +404,7 @@ func handleLevel11(c *gin.Context) {
 	}
 	sess := getSession(req.Session)
 	if sess == nil {
+		logFail(c, 11, "no active session")
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "No active session"})
 		return
 	}
@@ -390,6 +424,7 @@ func handleLevel11(c *gin.Context) {
 	sess.flagNonce, sess.flagCT = nonce, ct
 	st.mu.Unlock()
 
+	logPass(c, 11)
 	c.JSON(http.StatusOK, gin.H{
 		"next": "/api/level/11/solve",
 		"lwe": gin.H{
@@ -415,15 +450,18 @@ func handleLevel11Solve(c *gin.Context) {
 	}
 	sess := getSession(req.Session)
 	if sess == nil || sess.lweN == 0 {
-		time.Sleep(time.Second)
+		logFail(c, 11, "no active challenge")
+		time.Sleep(time.Second + jitterMs(500))
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "No active challenge"})
 		return
 	}
 	if len(req.S) != sess.lweN || !verifyLWE(sess.lweA, sess.lweB, sess.lweQ, req.S) {
-		time.Sleep(time.Second)
+		logFail(c, 11, "incorrect secret")
+		time.Sleep(time.Second + jitterMs(500))
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Secret incorrect"})
 		return
 	}
+	logger.Info("flag unlocked", "ip", c.ClientIP())
 	c.JSON(http.StatusOK, gin.H{
 		"status": "Auth Success",
 		"flag":   finalFlag,

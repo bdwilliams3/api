@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -25,6 +26,16 @@ type Config struct {
 }
 
 var cfg Config
+
+var logger = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+func logPass(c *gin.Context, level int) {
+	logger.Info("level passed", "level", level, "ip", c.ClientIP())
+}
+
+func logFail(c *gin.Context, level int, reason string) {
+	logger.Warn("level failed", "level", level, "reason", reason, "ip", c.ClientIP())
+}
 
 func loadConfig() Config {
 	c := Config{}

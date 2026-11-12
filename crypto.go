@@ -14,6 +14,7 @@ import (
 	"hash"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func deriveHMAC(seed, purpose string) string {
@@ -103,6 +104,15 @@ func randBytes(n int) []byte {
 	b := make([]byte, n)
 	_, _ = rand.Read(b)
 	return b
+}
+
+// jitterMs returns a random duration in [0, max] milliseconds, used to pad
+// sensitive success/failure paths so response timing leaks less.
+func jitterMs(max int) time.Duration {
+	if max <= 0 {
+		return 0
+	}
+	return time.Duration(int(randBytes(1)[0])%(max+1)) * time.Millisecond
 }
 
 func randInt64n(q int64) int64 {

@@ -73,6 +73,7 @@ func rateLimitMiddleware() gin.HandlerFunc {
 			limit, window, group = 30, time.Minute, "challenge"
 		}
 		if !rl.allow(ip+":"+group, limit, window) {
+			logger.Warn("rate limited", "ip", ip, "group", group, "path", path)
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "rate limited"})
 			return
 		}
