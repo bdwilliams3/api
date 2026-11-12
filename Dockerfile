@@ -1,10 +1,10 @@
 # Stage 1: Build the Go binary
-FROM golang:1.26-alpine AS builder 
+FROM golang:1.26-alpine AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
-COPY main.go ./
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o k-api main.go
+COPY *.go ./
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o k-api .
 
 # Stage 2: Final minimal image
 FROM alpine:latest
