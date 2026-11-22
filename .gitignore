@@ -29,3 +29,10 @@ istio-1.28.2
 
 # Ensure .gitignore itself remains tracked
 !.gitignore
+
+# --- Security tooling (re-include despite the *.sh / *.md ignores above) ---
+!security/*.sh
+!SECURITY/*.md
+
+# Scanner raw artifacts stay local (only the .md reports are committed)
+SECURITY/artifacts/
