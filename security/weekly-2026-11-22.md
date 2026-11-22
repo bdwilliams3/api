@@ -1,29 +1,33 @@
 # Weekly Security Posture Report — 2026-11-22
 
 - Target: `https://sample-api.com`
-- Generated: 2026-11-22 03:28 UTC
+- Generated: 2026-11-22 04:19 UTC
 
 ## Summary
 
 | Source | Critical | High | Medium | Low |
 |---|---|---|---|---|
-| Nuclei (live API DAST) | 0 | 0 | 0 | 0 |
+| DAST (live API) | 0 | 0 | 0 | 5 |
 | gosec (Go SAST) | 0 | 4 | 0 | 0 |
 | Trivy (image CVEs) | 0 | 9 | 18 | 4 |
 | Trivy (Docker/IaC config) | 9 | 13 | 28 | 104 |
 
 Cloudflare posture: 2 issue(s) flagged.
 
-## Live API scan — Nuclei (DAST)
+## Live API scan — DAST
 
-_No findings._
+- **[LOW]** Missing security header: Content-Security-Policy — /health response is missing the Content-Security-Policy header
+- **[LOW]** Missing security header: Referrer-Policy — /health response is missing the Referrer-Policy header
+- **[LOW]** Missing security header: Strict-Transport-Security — /health response is missing the Strict-Transport-Security header
+- **[LOW]** Missing security header: X-Content-Type-Options — /health response is missing the X-Content-Type-Options header
+- **[LOW]** Missing security header: X-Frame-Options — /health response is missing the X-Frame-Options header
 
 ## Source code — gosec (SAST)
 
-- **[HIGH]** G101 — C:\Users\bdwil\api\handlers.go:372-376 — Potential hardcoded credentials (code: 371: 		"next": "/api/oauth/authorize", 372: 		"oauth": gin.H{ 373: 			"client_id": oauthClient, 374: 			"authorize": "/api/oauth/authorize", 375: 			"token":  …
-- **[HIGH]** G115 — C:\Users\bdwil\api\crypto.go:124 — integer overflow conversion uint64 -> int64 (code: 123: 	} 124: 	return int64(v % uint64(q)) 125: })
-- **[HIGH]** G115 — C:\Users\bdwil\api\crypto.go:124 — integer overflow conversion int64 -> uint64 (code: 123: 	} 124: 	return int64(v % uint64(q)) 125: })
-- **[HIGH]** G115 — C:\Users\bdwil\api\crypto.go:66 — integer overflow conversion int64 -> byte (code: 65: 	for i := 0; i < 8; i++ { 66: 		msg[7-i] = byte(counter >> (8 * i)) 67: 	})
+- **[HIGH]** G101 — /repo/handlers.go:372-376 — Potential hardcoded credentials (code: 371: 		"next": "/api/oauth/authorize", 372: 		"oauth": gin.H{ 373: 			"client_id": oauthClient, 374: 			"authorize": "/api/oauth/authorize", 375: 			"token":     "/api/oaut…
+- **[HIGH]** G115 — /repo/crypto.go:124 — integer overflow conversion uint64 -> int64 (code: 123: 	} 124: 	return int64(v % uint64(q)) 125: })
+- **[HIGH]** G115 — /repo/crypto.go:124 — integer overflow conversion int64 -> uint64 (code: 123: 	} 124: 	return int64(v % uint64(q)) 125: })
+- **[HIGH]** G115 — /repo/crypto.go:66 — integer overflow conversion int64 -> byte (code: 65: 	for i := 0; i < 8; i++ { 66: 		msg[7-i] = byte(counter >> (8 * i)) 67: 	})
 
 ## Container image — Trivy (CVEs)
 
@@ -53,10 +57,10 @@ _No findings._
 
 - **[CRITICAL]** KSV-0041 · Manage secrets — helm/flux-system/gotk-components.yaml:140 — ClusterRole 'crd-controller-flux-system' shouldn't have access to manage resource 'secrets'
 - **[CRITICAL]** KSV-0046 · Manage all resources — helm/flux-system/gotk-components.yaml:134 — ClusterRole 'crd-controller-flux-system' shouldn't manage all resources
-- **[CRITICAL]** KSV-0046 · Manage all resources — helm/flux-system/gotk-components.yaml:122 — ClusterRole 'crd-controller-flux-system' shouldn't manage all resources
-- **[CRITICAL]** KSV-0046 · Manage all resources — helm/flux-system/gotk-components.yaml:116 — ClusterRole 'crd-controller-flux-system' shouldn't manage all resources
 - **[CRITICAL]** KSV-0046 · Manage all resources — helm/flux-system/gotk-components.yaml:110 — ClusterRole 'crd-controller-flux-system' shouldn't manage all resources
 - **[CRITICAL]** KSV-0046 · Manage all resources — helm/flux-system/gotk-components.yaml:104 — ClusterRole 'crd-controller-flux-system' shouldn't manage all resources
+- **[CRITICAL]** KSV-0046 · Manage all resources — helm/flux-system/gotk-components.yaml:116 — ClusterRole 'crd-controller-flux-system' shouldn't manage all resources
+- **[CRITICAL]** KSV-0046 · Manage all resources — helm/flux-system/gotk-components.yaml:122 — ClusterRole 'crd-controller-flux-system' shouldn't manage all resources
 - **[CRITICAL]** KSV-0046 · Manage all resources — helm/flux-system/gotk-components.yaml:128 — ClusterRole 'crd-controller-flux-system' shouldn't manage all resources
 - **[CRITICAL]** KSV-0046 · Manage all resources — helm/flux-system/gotk-components.yaml:212 — ClusterRole 'flux-edit-flux-system' shouldn't manage all resources
 - **[CRITICAL]** KSV-0046 · Manage all resources — helm/flux-system/gotk-components.yaml:240 — ClusterRole 'flux-view-flux-system' shouldn't manage all resources
