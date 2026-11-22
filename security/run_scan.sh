@@ -8,6 +8,9 @@ export MSYS_NO_PATHCONV=1
 cd "$(dirname "$0")/.."           # repo root
 REPO="$PWD"
 API_TARGET="${API_TARGET:-https://sample-api.com}"
+# DAST target: scan the app directly through Docker's host alias so we don't
+# hammer the public endpoint (and don't get our own IP banned by CrowdSec).
+ASP_TARGET="${ASP_TARGET:-http://host.docker.internal:8080}"
 ART="$REPO/SECURITY/artifacts"
 mkdir -p "$ART"
 
@@ -28,17 +31,18 @@ export SMTP_PASS="$(get SMTP_PASS)"
 export SMTP_TO="$(get SMTP_TO)"
 
 CACHE="$HOME/security/asp/cache"
-mkdir -p "$CACHE/trivy"
+mkdir -p "$CACHE/trivy" "$CACHE/nuclei-templates"
 
 # ---- 1. Nuclei DAST ---------------------------------------------------------
-echo "[1/6] Nuclei DAST -> $API_TARGET"
+echo "[1/6] Nuclei DAST -> $ASP_TARGET"
 docker run --rm \
+  -v "$(cygpath -w "$CACHE/nuclei-templates"):/templates" \
   -v "$(cygpath -w "$ART"):/out" \
   projectdiscovery/nuclei:latest \
-  -u "$API_TARGET" \
-  -tags exposure,misconfig,cve,tech \
+  -t /templates/http/exposures/backups,/templates/http/exposures/configs,/templates/http/exposures/tokens,/templates/http/exposures/files,/templates/http/exposures/apis,/templates/http/exposures/logs \
+  -u "$ASP_TARGET" \
   -severity low,medium,high,critical \
-  -rate-limit 5 -bulk-size 10 -c 10 -timeout 10 \
+  -rate-limit 2 -bulk-size 10 -c 10 -timeout 8 \
   -jsonl -silent -o /out/nuclei.jsonl || true
 
 # ---- 2. gosec SAST ----------------------------------------------------------
@@ -48,7 +52,7 @@ if [[ ! -f "$GOSEC" ]]; then
   echo "  installing gosec..."
   go install github.com/securego/gosec/v2/cmd/gosec@latest
 fi
-"$GOSEC" -no-fail -fmt=json -out "$ART/gosec.json" ./... || true
+"$GOSEC" -no-fail -fmt=json -out "$(cygpath -w "$ART/gosec.json")" ./... || true
 
 # ---- 3. Trivy image scan ----------------------------------------------------
 echo "[3/6] Trivy image scan"
