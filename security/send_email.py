@@ -16,7 +16,7 @@ USER = os.environ.get("SMTP_USER", "").strip()
 PASS = os.environ.get("SMTP_PASS", "")
 TO = os.environ.get("SMTP_TO", "").strip()
 
-REPORT = Path("SECURITY/LATEST.md")
+REPORT = Path(os.environ.get("REPO_ROOT", ".")) / "security" / "LATEST.md"
 
 
 def main():

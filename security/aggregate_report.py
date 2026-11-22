@@ -12,9 +12,9 @@ import json
 import os
 from datetime import datetime, timezone
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ART = os.path.join(ROOT, "SECURITY", "artifacts")
-OUT = os.path.join(ROOT, "SECURITY")
+ROOT = os.environ.get("REPO_ROOT") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ART = os.path.join(ROOT, "security", "artifacts")
+OUT = os.path.join(ROOT, "security")
 DATE = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 TARGET = os.environ.get("API_TARGET", "https://sample-api.com")
@@ -67,10 +67,11 @@ def short(text, n=240):
 
 
 # ---- collect findings -------------------------------------------------------
-nuclei = []
+# DAST: custom probe (dast.json) and/or nuclei (nuclei.jsonl)
+dast = []
 for item in load_jsonl(os.path.join(ART, "nuclei.jsonl")):
     info = item.get("info") or {}
-    nuclei.append(
+    dast.append(
         {
             "severity": info.get("severity", "unknown"),
             "title": info.get("name") or item.get("template-id", "nuclei finding"),
@@ -79,6 +80,14 @@ for item in load_jsonl(os.path.join(ART, "nuclei.jsonl")):
                 where=item.get("matched-at") or item.get("host", "?"),
                 desc=short(info.get("description") or info.get("tags") or ""),
             ),
+        }
+    )
+for item in load_json(os.path.join(ART, "dast.json")) or []:
+    dast.append(
+        {
+            "severity": item.get("severity", "info"),
+            "title": item.get("title", "dast probe"),
+            "detail": item.get("detail", ""),
         }
     )
 
@@ -136,7 +145,7 @@ for result in trivy_cfg_doc.get("Results", []) or []:
 
 cloudflare = load_json(os.path.join(ART, "cloudflare.json")) or []
 
-for group in (nuclei, gosec, trivy_image, trivy_config):
+for group in (dast, gosec, trivy_image, trivy_config):
     group.sort(key=lambda f: (sev_key(f["severity"]), f["title"].lower()))
 
 # ---- render -----------------------------------------------------------------
@@ -156,7 +165,7 @@ lines.append("")
 lines.append("| Source | Critical | High | Medium | Low |")
 lines.append("|---|---|---|---|---|")
 for name, group in (
-    ("Nuclei (live API DAST)", nuclei),
+    ("DAST (live API)", dast),
     ("gosec (Go SAST)", gosec),
     ("Trivy (image CVEs)", trivy_image),
     ("Trivy (Docker/IaC config)", trivy_config),
@@ -185,7 +194,7 @@ def section(title, findings, limit=20):
     lines.append("")
 
 
-section("Live API scan — Nuclei (DAST)", nuclei)
+section("Live API scan — DAST", dast)
 section("Source code — gosec (SAST)", gosec)
 section("Container image — Trivy (CVEs)", trivy_image)
 section("Docker / compose / Helm — Trivy (misconfig)", trivy_config)

@@ -32,7 +32,7 @@ istio-1.28.2
 
 # --- Security tooling (re-include despite the *.sh / *.md ignores above) ---
 !security/*.sh
-!SECURITY/*.md
+!security/*.md
 
 # Scanner raw artifacts stay local (only the .md reports are committed)
-SECURITY/artifacts/
+security/artifacts/
