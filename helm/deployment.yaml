@@ -88,7 +88,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: k-api
-  namespace: default
+  namespace: k-api
 spec:
   replicas: 2
   selector:
@@ -165,7 +165,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: k-api-service
-  namespace: default
+  namespace: k-api
 spec:
   selector:
     app: k-api
@@ -179,7 +179,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: gemini-mcp
-  namespace: default
+  namespace: k-api
 spec:
   replicas: 1
   selector:
@@ -233,7 +233,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: gemini-mcp
-  namespace: default
+  namespace: k-api
 spec:
   selector:
     app: gemini-mcp

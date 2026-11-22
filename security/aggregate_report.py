@@ -213,8 +213,8 @@ lines.append("")
 
 lines.append("## Remediation notes (for the Agent)")
 lines.append("")
-lines.append("- Address CRITICAL/HIGH findings first; each artifact file in `SECURITY/artifacts/` has full details.")
-lines.append("- Re-run the workflow manually after fixes (`Actions → Weekly Security Posture → Run workflow`).")
+lines.append("- Address CRITICAL/HIGH findings first; each artifact file in `security/artifacts/` has full details.")
+lines.append("- Re-run the ASPM container scan after fixes (`docker compose -f ~/security/docker-compose.yml exec asp /app/scan.sh`).")
 lines.append("- If a finding is a false positive, document it in this section rather than deleting it.")
 lines.append("")
 

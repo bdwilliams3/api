@@ -1,0 +1,4 @@
+# KSV-0125 flags any registry other than Trivy's hardcoded default list
+# (even ghcr.io and registry.k8s.io). We explicitly use ghcr.io and registry.k8s.io.
+KSV-0125
+AVD-KSV-0125

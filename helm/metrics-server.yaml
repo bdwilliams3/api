@@ -101,7 +101,7 @@ metadata:
   labels:
     k8s-app: metrics-server
   name: metrics-server
-  namespace: kube-system
+  namespace: monitoring
 spec:
   ports:
   - appProtocol: https
@@ -118,7 +118,7 @@ metadata:
   labels:
     k8s-app: metrics-server
   name: metrics-server
-  namespace: kube-system
+  namespace: monitoring
 spec:
   selector:
     matchLabels:
