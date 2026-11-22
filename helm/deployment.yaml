@@ -34,9 +34,27 @@ spec:
       labels:
         app: cloudflared
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: cloudflared
-        image: cloudflare/cloudflared:latest
+        image: ghcr.io/cloudflare/cloudflared:2025.2.1
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 10001
+          runAsGroup: 10001
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
         args:
         - tunnel
         - --config
@@ -88,10 +106,27 @@ spec:
         sidecar.istio.io/proxyMemoryLimit: "256Mi"
     spec:
       automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: k-api
-        image: ghcr.io/bdwilliams3/k-api:master-1773501312-e7f07e2 # {"$imagepolicy": "flux-system:k-api"}
+        image: ghcr.io/bdwilliams3/k-api:v2.0.0
         imagePullPolicy: IfNotPresent
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 10001
+          runAsGroup: 10001
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
         env:
         - name: INTERNAL_SEED
           valueFrom:
@@ -99,9 +134,15 @@ spec:
               name: k-api-secrets
               key: INTERNAL_SEED
         - name: API_USER
-          value: "api_hunter"
+          valueFrom:
+            secretKeyRef:
+              name: k-api-secrets
+              key: API_USER
         - name: API_PASS
-          value: "p@s5W0rD"
+          valueFrom:
+            secretKeyRef:
+              name: k-api-secrets
+              key: API_PASS
         ports:
         - containerPort: 8080
         resources:
@@ -150,12 +191,37 @@ spec:
         app: gemini-mcp
         sidecar.istio.io/inject: "true"
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: mcp-server
-        image: node:20-alpine
+        image: ghcr.io/modelcontextprotocol/node:20-alpine
         stdin: true
         tty: true
         command: ["npx", "-y", "@modelcontextprotocol/server-google-gemini"]
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 10001
+          runAsGroup: 10001
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        resources:
+          limits:
+            cpu: "200m"
+            memory: "256Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
         env:
         - name: GEMINI_API_KEY
           valueFrom:

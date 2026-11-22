@@ -367,6 +367,7 @@ func handleLevel9(c *gin.Context) {
 
 	time.Sleep(jitterMs(150))
 	logPass(c, 9)
+	// #nosec G101 -- "/api/oauth/token" is an endpoint URL path, not a credential
 	c.JSON(http.StatusOK, gin.H{
 		"next": "/api/oauth/authorize",
 		"oauth": gin.H{

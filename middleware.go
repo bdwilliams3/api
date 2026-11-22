@@ -64,6 +64,17 @@ func (rl *rateLimiter) startReaper(interval, idleTTL time.Duration) {
 
 var rl = newRateLimiter()
 
+func securityHeadersMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("X-Frame-Options", "DENY")
+		c.Header("Referrer-Policy", "no-referrer")
+		c.Header("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+		c.Header("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+		c.Next()
+	}
+}
+
 func rateLimitMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ip := c.ClientIP()

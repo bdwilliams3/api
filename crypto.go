@@ -9,9 +9,11 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"hash"
+	"math/big"
 	"strconv"
 	"strings"
 	"time"
@@ -62,9 +64,11 @@ func pbkdf2SHA256(password, salt []byte, iter, keyLen int) []byte {
 
 func totpCodeAt(secret []byte, period int64, digits int, newHash func() hash.Hash, counter int64) string {
 	var msg [8]byte
-	for i := 0; i < 8; i++ {
-		msg[7-i] = byte(counter >> (8 * i))
+	var u uint64
+	if counter > 0 {
+		u = uint64(counter)
 	}
+	binary.BigEndian.PutUint64(msg[:], u)
 	mac := hmac.New(newHash, secret)
 	mac.Write(msg[:])
 	sum := mac.Sum(nil)
@@ -116,12 +120,14 @@ func jitterMs(max int) time.Duration {
 }
 
 func randInt64n(q int64) int64 {
-	b := randBytes(8)
-	var v uint64
-	for i := 0; i < 8; i++ {
-		v |= uint64(b[i]) << (8 * i)
+	if q <= 0 {
+		return 0
 	}
-	return int64(v % uint64(q))
+	n, err := rand.Int(rand.Reader, big.NewInt(q))
+	if err != nil {
+		return 0
+	}
+	return n.Int64()
 }
 
 func randSmallError() int64 {

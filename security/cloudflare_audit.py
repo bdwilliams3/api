@@ -12,7 +12,6 @@ Env:
 import json
 import os
 import socket
-import sys
 import urllib.parse
 import urllib.request
 
@@ -36,6 +35,8 @@ checks = []
 
 
 def add(name, status, detail):
+    if isinstance(status, bool):
+        status = "ok" if status else "fail"
     checks.append({"check": name, "status": status, "detail": detail})
 
 
@@ -82,7 +83,7 @@ def main():
         add("settings", "warn", f"could not read zone settings: {exc}")
 
     ssl_mode = settings.get("ssl")
-    add("ssl_mode", ssl_mode in ("full", "strict"), f"SSL/TLS mode is '{ssl_mode}' (recommend 'full (strict)')")
+    add("ssl_mode", ssl_mode in ("full", "strict"), f"SSL/TLS mode is '{ssl_mode}' (recommend 'full' or 'strict')")
 
     always_https = settings.get("always_use_https")
     add("always_use_https", always_https == "on", f"Always Use HTTPS is '{always_https}'")
@@ -96,33 +97,21 @@ def main():
     sec_level = settings.get("security_level")
     add("security_level", sec_level in ("medium", "high", "under_attack"), f"Security level is '{sec_level}'")
 
-    # --- WAF / firewall ------------------------------------------------------
-    for name, path, label in (
-        ("waf_custom_rules", f"/zones/{zone}/firewall/rules", "WAF custom rules"),
-        ("rate_limit_rules", f"/zones/{zone}/rate_limits", "rate-limit rules"),
-        ("ip_access_rules", f"/zones/{zone}/firewall/access_rules/rules", "IP access rules"),
-    ):
-        try:
-            res = cf(path).get("result") or []
-            add(name, len(res) > 0, f"{len(res)} {label}")
-        except Exception as exc:
-            add(name, "warn", f"could not read {label}: {exc}")
-
-    # --- DNS (worker bouncer needs an A/AAAA record per zone) ----------------
+    # --- DNS (proxied A/AAAA or Cloudflare Tunnel CNAME) ---------------------
     try:
         records = (cf(f"/zones/{zone}/dns_records?per_page=100").get("result")) or []
-        proxied_a = [r for r in records if r.get("type") in ("A", "AAAA")]
-        add("dns_a_record", len(proxied_a) > 0, f"{len(proxied_a)} A/AAAA record(s)")
+        proxied = [r for r in records if r.get("proxied") and r.get("type") in ("A", "AAAA", "CNAME")]
+        add("dns_proxied_records", len(proxied) > 0, f"{len(proxied)} proxied A/AAAA/CNAME record(s)")
     except Exception as exc:
-        add("dns_a_record", "warn", f"could not read DNS records: {exc}")
+        add("dns_proxied_records", "warn", f"could not read DNS records: {exc}")
 
-    # --- Worker routes (informational) ---------------------------------------
+    # --- Worker routes (CrowdSec bouncer fail-open posture) ------------------
     try:
         routes = cf(f"/zones/{zone}/workers/routes").get("result") or []
         fail_closed = [r for r in routes if not r.get("request_limit_fail_open")]
         add(
             "worker_route_fail_open",
-            not fail_closed,
+            len(routes) > 0 and not fail_closed,
             f"{len(routes)} route(s), {len(fail_closed)} fail-closed (recommend fail-open)",
         )
     except Exception as exc:

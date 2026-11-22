@@ -36,3 +36,6 @@ istio-1.28.2
 
 # Scanner raw artifacts stay local (only the .md reports are committed)
 security/artifacts/
+__pycache__/
+*.pyc
+/k-api

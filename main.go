@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -50,6 +51,20 @@ func loadConfig() Config {
 }
 
 func main() {
+	port := strings.TrimSpace(os.Getenv("PORT"))
+	if port == "" {
+		port = "8080"
+	}
+	if len(os.Args) > 1 && os.Args[1] == "-healthcheck" {
+		client := &http.Client{Timeout: 3 * time.Second}
+		resp, err := client.Get("http://127.0.0.1:8080/health")
+		if err != nil || resp.StatusCode != http.StatusOK {
+			os.Exit(1)
+		}
+		_ = resp.Body.Close()
+		os.Exit(0)
+	}
+
 	cfg = loadConfig()
 
 	rl.startReaper(5*time.Minute, time.Hour)
@@ -64,13 +79,9 @@ func main() {
 	// honored for per-client rate limiting and logging.
 	r := gin.New()
 	_ = r.SetTrustedProxies([]string{"127.0.0.1", "::1", "172.16.0.0/12"})
-	r.Use(gin.Recovery(), rateLimitMiddleware())
+	r.Use(gin.Recovery(), securityHeadersMiddleware(), rateLimitMiddleware())
 	registerRoutes(r)
 
-	port := strings.TrimSpace(os.Getenv("PORT"))
-	if port == "" {
-		port = "8080"
-	}
 	fmt.Printf("Starting k-api on :%s\n", port)
 	_ = r.Run(":" + port)
 }
