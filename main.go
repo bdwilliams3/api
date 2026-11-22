@@ -58,11 +58,12 @@ func main() {
 	fmt.Printf("Starting k-api version %s\n", version)
 
 	gin.SetMode(gin.ReleaseMode)
-	// cloudflared connects from localhost and forwards Cloudflare's
-	// X-Forwarded-For header, so trust it to obtain real client IPs for
-	// per-client rate limiting and logging.
+	// cloudflared connects through Docker's NAT, so the container sees the
+	// bridge gateway (e.g. 172.18.0.1) rather than 127.0.0.1. Trust loopback
+	// plus the Docker bridge subnet so Cloudflare's X-Forwarded-For header is
+	// honored for per-client rate limiting and logging.
 	r := gin.New()
-	_ = r.SetTrustedProxies([]string{"127.0.0.1", "::1"})
+	_ = r.SetTrustedProxies([]string{"127.0.0.1", "::1", "172.16.0.0/12"})
 	r.Use(gin.Recovery(), rateLimitMiddleware())
 	registerRoutes(r)
 
