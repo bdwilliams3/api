@@ -1,7 +1,7 @@
 # Weekly Security Posture Report — 2026-11-23
 
 - Target: `https://sample-api.com`
-- Generated: 2026-11-23 05:00 UTC
+- Generated: 2026-11-23 09:00 UTC
 
 ## Summary
 
