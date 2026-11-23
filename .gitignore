@@ -31,6 +31,7 @@ istio-1.28.2
 !.gitignore
 
 # --- Security tooling (re-include despite the *.sh / *.md ignores above) ---
+!README.md
 !security/*.sh
 !security/*.md
 

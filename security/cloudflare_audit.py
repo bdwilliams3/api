@@ -86,7 +86,11 @@ def main():
     add("ssl_mode", ssl_mode in ("full", "strict"), f"SSL/TLS mode is '{ssl_mode}' (recommend 'full' or 'strict')")
 
     always_https = settings.get("always_use_https")
-    add("always_use_https", always_https == "on", f"Always Use HTTPS is '{always_https}'")
+    add(
+        "always_use_https",
+        "info",
+        f"Always Use HTTPS is '{always_https}' (kept 'off' so plain HTTP curl works without 301)",
+    )
 
     min_tls = settings.get("min_tls_version")
     add("min_tls_version", min_tls in ("1.2", "1.3"), f"Minimum TLS version is '{min_tls}' (recommend 1.2+)")
