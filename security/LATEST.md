@@ -1,7 +1,7 @@
-# Weekly Security Posture Report — 2026-11-22
+# Weekly Security Posture Report — 2026-11-23
 
 - Target: `https://sample-api.com`
-- Generated: 2026-11-22 14:40 UTC
+- Generated: 2026-11-23 05:00 UTC
 
 ## Summary
 
@@ -33,7 +33,7 @@ _No findings._
 ## Cloudflare posture
 
 - ✅ **ssl_mode** — SSL/TLS mode is 'full' (recommend 'full' or 'strict')
-- ✅ **always_use_https** — Always Use HTTPS is 'on'
+- ℹ️ **always_use_https** — Always Use HTTPS is 'off' (kept 'off' so plain HTTP curl works without 301)
 - ✅ **min_tls_version** — Minimum TLS version is '1.2' (recommend 1.2+)
 - ✅ **tls_1_3** — TLS 1.3 is 'on'
 - ✅ **security_level** — Security level is 'medium'
